@@ -217,7 +217,7 @@ export default function App() {
               </div>
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-6">
               {CHECKLIST_ITEMS.map((item, index) => {
                 const data = checklistData[index] || { status: '', notes: '' };
                 return (
@@ -227,7 +227,8 @@ export default function App() {
                     isSeasonalTask={index === 9}
                     status={data.status}
                     notes={data.notes}
-                    photoUrl={data.photoUrl}
+                    photoUrls={data.photoUrls}
+                    rooms={data.rooms}
                     seasonalTaskName={data.seasonalTaskName}
                     onUpdate={(field, value) => updateChecklistItem(index, field, value)}
                   />
@@ -235,14 +236,15 @@ export default function App() {
               })}
             </div>
 
-            <div className="mt-8 pt-6 border-t border-forest/10 flex justify-end">
-              <Button 
+            <div className="mt-10 pt-6 border-t border-deep-forest/10 flex justify-end">
+              <button
+                type="button"
                 onClick={handleComplete}
-                className="w-full sm:w-auto px-8 py-6 bg-pathway-green text-linen-white rounded-lg text-sm font-bold uppercase tracking-widest shadow-lg shadow-pathway-green/30 hover:bg-deep-forest transition-colors h-auto flex items-center justify-center gap-2"
+                className="w-full sm:w-auto bg-pathway-green text-white py-4 px-10 rounded-xl font-bold text-[15px] hover:brightness-110 transition-all shadow-lg shadow-pathway-green/20 flex items-center justify-center gap-2"
               >
-                <span>Complete Inspection</span>
+                Complete Inspection
                 <svg width="18" height="18" fill="currentColor" viewBox="0 0 16 16"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/></svg>
-              </Button>
+              </button>
             </div>
           </div>
         )}

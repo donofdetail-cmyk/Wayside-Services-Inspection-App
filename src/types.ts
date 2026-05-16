@@ -13,10 +13,16 @@ export const CHECKLIST_ITEMS = [
 
 export type InspectionStatus = 'Pass' | 'Needs Attention' | 'Fail' | '';
 
+export interface Room {
+  name: string;
+  notes: string;
+}
+
 export interface ChecklistItemData {
   status: InspectionStatus;
   notes: string;
-  photoUrl?: string; // base64
+  photoUrls?: string[]; // base64 array — stays in memory, never downloaded
+  rooms?: Room[]; // per-room breakdown
   seasonalTaskName?: string; // Only used for the 10th item
 }
 
