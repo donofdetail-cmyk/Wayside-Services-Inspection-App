@@ -1,14 +1,14 @@
 export const CHECKLIST_ITEMS = [
-  "HVAC air filter inspection & replacement",
-  "Visual plumbing inspection",
-  "Faucet & fixture performance check",
-  "Light switch & receptacle safety check",
-  "Smoke & carbon monoxide detector status check",
-  "Door & window operation check",
-  "Garage door seal & functionality check",
-  "Exterior visual walk-around",
-  "Weather seal inspection",
-  "+ One rotating seasonal preventative task"
+  "HVAC Air Filter Inspection & Replacement",
+  "Visual Plumbing Inspection",
+  "Faucet & Fixture Performance Check",
+  "Light Switch & Receptacle Safety Check",
+  "Smoke & Carbon Monoxide Detector Status Check",
+  "Door & Window Operation Check",
+  "Garage Door Seal & Functionality Check",
+  "Exterior Visual Walk-Around",
+  "Weather Seal Inspection",
+  "+ One Rotating Seasonal Preventative Task"
 ];
 
 export type InspectionStatus = 'Pass' | 'Needs Attention' | 'Fail' | '';

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
+  <!-- House body -->
+  <path d="M8 22L24 8L40 22V40C40 41.1046 39.1046 42 38 42H10C8.89543 42 8 41.1046 8 40V22Z" fill="#1D9E75"/>
+  <!-- Roof peak accent -->
+  <path d="M4 24L24 6L44 24" stroke="#1D9E75" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- Door -->
+  <rect x="20" y="30" width="8" height="12" rx="1" fill="#16795A"/>
+  <!-- Door knob -->
+  <circle cx="26" cy="37" r="1" fill="#1D9E75"/>
+  <!-- Checkmark badge background -->
+  <circle cx="34" cy="14" r="8" fill="#1D9E75" stroke="white" stroke-width="2.5"/>
+  <!-- Checkmark -->
+  <path d="M30.5 14L33 16.5L37.5 11.5" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
