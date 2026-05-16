@@ -1,0 +1,10 @@
+{
+  "name": "Wayside Services Inspector",
+  "description": "Mobile-friendly web application for Wayside Services preventative maintenance inspections with PDF report generation and email capability.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
