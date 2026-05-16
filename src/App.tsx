@@ -1,41 +1,128 @@
-import { useState, useEffect } from 'react';
-import { CHECKLIST_ITEMS, ClientData, ChecklistItemData, InspectionReport } from './types';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { CHECKLIST_ITEMS, ClientData, ChecklistItemData, InspectionReport, InspectionDraft } from './types';
 import { ChecklistItemCard } from './components/ChecklistItemCard';
+import { TimerBadge } from './components/TimerBadge';
+import { HistoryDashboard } from './components/HistoryDashboard';
 import { generateAndDownloadPDF } from './pdfGenerator';
+import {
+  saveDraft, loadDraft, clearDraft,
+  saveCompletedInspection, loadHistory,
+} from './storage';
+import { useTimer } from './hooks/useTimer';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
-import { ClipboardCheck, ArrowRight, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
+import { ArrowRight, Loader2, CheckCircle2, AlertCircle, History, ClipboardList } from 'lucide-react';
 
-type Step = 'login' | 'client_info' | 'checklist' | 'generating' | 'success' | 'error';
+type Step = 'login' | 'client_info' | 'checklist' | 'history' | 'generating' | 'success' | 'error';
+
+const EMPTY_CLIENT: ClientData = {
+  clientName: '',
+  clientEmail: '',
+  propertyAddress: '',
+  date: new Date().toISOString().split('T')[0],
+  technicianName: '',
+};
 
 export default function App() {
   const [step, setStep] = useState<Step>('login');
-  
+
+  // ── Auth ─────────────────────────────────────────────────────────────────
   const [loginName, setLoginName] = useState('');
   const [loginPin, setLoginPin] = useState('');
   const [loginError, setLoginError] = useState('');
 
+  // ── Inspection data ───────────────────────────────────────────────────────
+  const [clientData, setClientData] = useState<ClientData>(EMPTY_CLIENT);
+  const [checklistData, setChecklistData] = useState<Record<number, ChecklistItemData>>({});
+  const [errorMsg, setErrorMsg] = useState('');
+
+  // ── Draft / resume ────────────────────────────────────────────────────────
+  const [draft, setDraft] = useState<InspectionDraft | null>(null);
+  const [showResumeBanner, setShowResumeBanner] = useState(false);
+  const draftSeedSeconds = useRef(0);
+
+  // ── Timer (only active on checklist step) ─────────────────────────────────
+  const [timerSeed, setTimerSeed] = useState(0);
+  const [timerActive, setTimerActive] = useState(false);
+  const [elapsedOnComplete, setElapsedOnComplete] = useState(0);
+
+  // Separate timer hook — we track elapsed ourselves for saving
+  const timerRef = useRef(0);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const startTimer = useCallback((seed = 0) => {
+    timerRef.current = seed;
+    setTimerSeed(seed);
+    setTimerActive(true);
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    intervalRef.current = setInterval(() => {
+      timerRef.current += 1;
+    }, 1000);
+  }, []);
+
+  const stopTimer = useCallback(() => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    setTimerActive(false);
+    return timerRef.current;
+  }, []);
+
+  // Pause/resume timer when tab visibility changes
+  useEffect(() => {
+    if (!timerActive) return;
+    const handleVisibility = () => {
+      if (document.hidden) {
+        if (intervalRef.current) clearInterval(intervalRef.current);
+      } else {
+        intervalRef.current = setInterval(() => { timerRef.current += 1; }, 1000);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [timerActive]);
+
+  // Cleanup timer on unmount
+  useEffect(() => () => { if (intervalRef.current) clearInterval(intervalRef.current); }, []);
+
+  // ── On mount: restore auth, check for draft ───────────────────────────────
   useEffect(() => {
     const storedName = localStorage.getItem('wayside_technician_name');
     if (storedName) {
       setClientData(prev => ({ ...prev, technicianName: storedName }));
       setStep('client_info');
+      // Check for an existing draft
+      const saved = loadDraft();
+      if (saved) {
+        setDraft(saved);
+        setShowResumeBanner(true);
+      }
     }
   }, []);
-  
-  const [clientData, setClientData] = useState<ClientData>({
-    clientName: '',
-    clientEmail: '',
-    propertyAddress: '',
-    date: new Date().toISOString().split('T')[0],
-    technicianName: ''
-  });
 
-  const [checklistData, setChecklistData] = useState<Record<number, ChecklistItemData>>({});
-  const [errorMsg, setErrorMsg] = useState<string>('');
+  // ── Auto-save draft while on checklist step ───────────────────────────────
+  const autoSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (step !== 'checklist') return;
+    if (autoSaveRef.current) clearTimeout(autoSaveRef.current);
+    autoSaveRef.current = setTimeout(() => {
+      const existing = loadDraft();
+      const updated: InspectionDraft = {
+        id: existing?.id ?? crypto.randomUUID(),
+        clientInfo: clientData,
+        checklistData,
+        startedAt: existing?.startedAt ?? new Date().toISOString(),
+        lastSavedAt: new Date().toISOString(),
+        elapsedSeconds: timerRef.current,
+      };
+      saveDraft(updated);
+    }, 2000);
+    return () => { if (autoSaveRef.current) clearTimeout(autoSaveRef.current); };
+  }, [checklistData, clientData, step]);
 
+  // ── Handlers ──────────────────────────────────────────────────────────────
   const updateClientInfo = (field: keyof ClientData, value: string) => {
     setClientData(prev => ({ ...prev, [field]: value }));
   };
@@ -43,17 +130,8 @@ export default function App() {
   const updateChecklistItem = (index: number, field: string, value: any) => {
     setChecklistData(prev => ({
       ...prev,
-      [index]: {
-        ...(prev[index] || { status: '', notes: '' }),
-        [field]: value
-      }
+      [index]: { ...(prev[index] || { status: '', notes: '' }), [field]: value },
     }));
-  };
-
-  const handleStartChecklist = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!clientData.clientName || !clientData.clientEmail) return;
-    setStep('checklist');
   };
 
   const handleLogin = (e: React.FormEvent) => {
@@ -63,6 +141,8 @@ export default function App() {
       localStorage.setItem('wayside_technician_name', loginName);
       setClientData(prev => ({ ...prev, technicianName: loginName }));
       setLoginError('');
+      const saved = loadDraft();
+      if (saved) { setDraft(saved); setShowResumeBanner(true); }
       setStep('client_info');
     } else {
       setLoginError('Invalid PIN');
@@ -71,29 +151,57 @@ export default function App() {
 
   const handleLogout = () => {
     localStorage.removeItem('wayside_technician_name');
-    setClientData(prev => ({ ...prev, technicianName: '' }));
+    stopTimer();
+    setClientData(EMPTY_CLIENT);
+    setChecklistData({});
     setLoginPin('');
+    setDraft(null);
+    setShowResumeBanner(false);
     setStep('login');
   };
 
+  const handleStartChecklist = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!clientData.clientName || !clientData.clientEmail) return;
+    setShowResumeBanner(false);
+    startTimer(0);
+    setStep('checklist');
+  };
+
+  const handleResumeDraft = () => {
+    if (!draft) return;
+    setClientData(draft.clientInfo);
+    setChecklistData(draft.checklistData);
+    setShowResumeBanner(false);
+    startTimer(draft.elapsedSeconds);
+    setStep('checklist');
+  };
+
+  const handleDismissDraft = () => {
+    clearDraft();
+    setDraft(null);
+    setShowResumeBanner(false);
+  };
+
   const handleComplete = async () => {
-    // Validate that all items have a status
     for (let i = 0; i < CHECKLIST_ITEMS.length; i++) {
-        const item = checklistData[i];
-        if (!item || !item.status) {
-            alert(`Please complete item #${i + 1}: ${CHECKLIST_ITEMS[i]}`);
-            return;
-        }
+      const item = checklistData[i];
+      if (!item || !item.status) {
+        alert(`Please complete item #${i + 1}: ${CHECKLIST_ITEMS[i]}`);
+        return;
+      }
     }
 
+    const elapsed = stopTimer();
+    setElapsedOnComplete(elapsed);
     setStep('generating');
+
     try {
-      const report: InspectionReport = {
-        clientInfo: clientData,
-        checklist: checklistData
-      };
-      
+      const report: InspectionReport = { clientInfo: clientData, checklist: checklistData };
       await generateAndDownloadPDF(report);
+      saveCompletedInspection(report, elapsed);
+      clearDraft();
+      setDraft(null);
       setStep('success');
     } catch (error: any) {
       console.error(error);
@@ -102,10 +210,22 @@ export default function App() {
     }
   };
 
+  const handleStartAnother = () => {
+    setClientData(prev => ({ ...prev, clientName: '', clientEmail: '', propertyAddress: '' }));
+    setChecklistData({});
+    stopTimer();
+    setStep('client_info');
+  };
+
+  const historyCount = loadHistory().length;
+
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-linen-white text-deep-forest pb-20 font-sans">
+      {/* ── Header ── */}
       <header className="h-20 bg-deep-forest text-linen-white flex items-center px-4 md:px-8 shadow-md sticky top-0 z-10 w-full">
         <div className="max-w-4xl w-full mx-auto flex items-center justify-between">
+          {/* Logo */}
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2.5">
               <svg viewBox="0 0 48 48" className="w-9 h-9" fill="none">
@@ -121,28 +241,62 @@ export default function App() {
               </div>
             </div>
           </div>
+
+          {/* Right side controls */}
           {step !== 'login' && (
-            <div className="hidden md:flex items-center gap-6">
-              <div className="text-right flex flex-col items-end">
-                <div className="flex items-center gap-2">
-                  <p className="text-xs opacity-70 uppercase font-semibold">Current Technician</p>
-                  <button onClick={handleLogout} className="text-[9px] uppercase font-bold text-white/40 hover:text-white transition-colors underline">Logout</button>
+            <div className="flex items-center gap-3">
+              {/* History button */}
+              {step !== 'history' && (
+                <button
+                  onClick={() => setStep('history')}
+                  className="hidden md:flex items-center gap-1.5 text-white/60 hover:text-white transition-colors text-xs font-bold uppercase relative"
+                >
+                  <History className="w-4 h-4" />
+                  History
+                  {historyCount > 0 && (
+                    <span className="absolute -top-1.5 -right-2.5 bg-amber-porch text-white text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
+                      {historyCount > 9 ? '9+' : historyCount}
+                    </span>
+                  )}
+                </button>
+              )}
+
+              <div className="hidden md:block h-8 w-[1px] bg-white/20" />
+
+              {/* Technician + logout */}
+              <div className="hidden md:flex items-center gap-3">
+                <div className="text-right flex flex-col items-end">
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs opacity-70 uppercase font-semibold">Technician</p>
+                    <button onClick={handleLogout} className="text-[9px] uppercase font-bold text-white/40 hover:text-white transition-colors underline">Logout</button>
+                  </div>
+                  <p className="text-sm font-medium text-amber-porch">{clientData.technicianName || 'Technician'}</p>
                 </div>
-                <p className="text-sm font-medium text-amber-porch">{clientData.technicianName || 'Technician'}</p>
               </div>
-              <div className="h-10 w-[1px] bg-white/20"></div>
-              <div className="flex flex-col items-center bg-pathway-green px-4 py-1 rounded shadow-inner">
-                <span className="text-[10px] uppercase font-bold text-white/80">Progress</span>
-                <span className="text-lg font-bold leading-none text-white">
-                  {Math.round((Object.values(checklistData).filter(item => item && item.status).length / CHECKLIST_ITEMS.length) * 100)}%
-                </span>
-              </div>
+
+              {/* Progress pill (checklist only) */}
+              {step === 'checklist' && (
+                <>
+                  <div className="hidden md:block h-8 w-[1px] bg-white/20" />
+                  <div className="flex items-center gap-2">
+                    <div className="flex flex-col items-center bg-pathway-green px-3 py-1 rounded-xl shadow-inner">
+                      <span className="text-[10px] uppercase font-bold text-white/80">Progress</span>
+                      <span className="text-base font-bold leading-none text-white">
+                        {Math.round((Object.values(checklistData).filter(i => i && i.status).length / CHECKLIST_ITEMS.length) * 100)}%
+                      </span>
+                    </div>
+                    <TimerBadge seedSeconds={timerSeed} />
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>
       </header>
 
       <main className="max-w-4xl w-full mx-auto p-4 md:p-6 flex flex-col gap-6">
+
+        {/* ── Login ── */}
         {step === 'login' && (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-sm mx-auto w-full mt-10 md:mt-20">
             <div className="bg-white rounded-2xl shadow-xl p-8">
@@ -154,11 +308,11 @@ export default function App() {
                 {loginError && <p className="text-red-500 text-xs font-bold -mb-2">{loginError}</p>}
                 <div>
                   <Label htmlFor="loginName" className="text-[10px] font-bold uppercase text-deep-forest/50 block mb-1.5">Your Name *</Label>
-                  <Input id="loginName" required value={loginName} onChange={(e) => setLoginName(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-deep-forest/10 text-deep-forest text-sm placeholder:text-deep-forest/40 focus:outline-none focus:border-pathway-green focus:ring-2 focus:ring-pathway-green/20 transition-all bg-linen-white/50 h-auto shadow-none" />
+                  <Input id="loginName" required value={loginName} onChange={(e) => setLoginName(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-deep-forest/10 text-deep-forest text-sm focus:outline-none focus:border-pathway-green focus:ring-2 focus:ring-pathway-green/20 transition-all bg-linen-white/50 h-auto shadow-none" />
                 </div>
                 <div>
                   <Label htmlFor="loginPin" className="text-[10px] font-bold uppercase text-deep-forest/50 block mb-1.5">Technician PIN *</Label>
-                  <Input id="loginPin" type="password" required value={loginPin} onChange={(e) => setLoginPin(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-deep-forest/10 text-deep-forest text-sm placeholder:text-deep-forest/40 focus:outline-none focus:border-pathway-green focus:ring-2 focus:ring-pathway-green/20 transition-all bg-linen-white/50 h-auto shadow-none" />
+                  <Input id="loginPin" type="password" required value={loginPin} onChange={(e) => setLoginPin(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-deep-forest/10 text-deep-forest text-sm focus:outline-none focus:border-pathway-green focus:ring-2 focus:ring-pathway-green/20 transition-all bg-linen-white/50 h-auto shadow-none" />
                 </div>
                 <button type="submit" className="w-full bg-pathway-green text-white py-4 rounded-xl font-bold text-[15px] hover:brightness-110 transition-all shadow-lg shadow-pathway-green/20 mt-2">
                   Log In
@@ -168,8 +322,38 @@ export default function App() {
           </div>
         )}
 
+        {/* ── Client Info ── */}
         {step === 'client_info' && (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+            {/* Resume Draft Banner */}
+            {showResumeBanner && draft && (
+              <div className="mb-4 bg-amber-porch/10 border border-amber-porch/30 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-deep-forest flex items-center gap-2">
+                    <ClipboardList className="w-4 h-4 text-amber-porch shrink-0" />
+                    Unfinished inspection found
+                  </p>
+                  <p className="text-xs text-deep-forest/60 mt-0.5 truncate">
+                    <strong>{draft.clientInfo.clientName}</strong> · {draft.clientInfo.propertyAddress}
+                  </p>
+                </div>
+                <div className="flex gap-2 shrink-0">
+                  <button
+                    onClick={handleResumeDraft}
+                    className="bg-amber-porch text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition-all"
+                  >
+                    Resume
+                  </button>
+                  <button
+                    onClick={handleDismissDraft}
+                    className="bg-deep-forest/5 text-deep-forest/60 px-4 py-2 rounded-xl text-xs font-bold hover:bg-deep-forest/10 transition-all"
+                  >
+                    Discard
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="bg-white rounded-2xl shadow-xl p-8">
               <form onSubmit={handleStartChecklist} className="flex flex-col gap-5">
                 <div className="border-b border-deep-forest/10 pb-4">
@@ -178,19 +362,19 @@ export default function App() {
                 </div>
                 <div>
                   <Label htmlFor="clientName" className="text-[10px] font-bold uppercase text-deep-forest/50 block mb-1.5">Client Name *</Label>
-                  <Input id="clientName" required value={clientData.clientName} onChange={(e) => updateClientInfo('clientName', e.target.value)} className="w-full px-4 py-3 rounded-xl border border-deep-forest/10 text-deep-forest text-sm placeholder:text-deep-forest/40 focus:outline-none focus:border-pathway-green focus:ring-2 focus:ring-pathway-green/20 transition-all bg-linen-white/50 h-auto shadow-none" />
+                  <Input id="clientName" required value={clientData.clientName} onChange={(e) => updateClientInfo('clientName', e.target.value)} className="w-full px-4 py-3 rounded-xl border border-deep-forest/10 text-deep-forest text-sm focus:outline-none focus:border-pathway-green focus:ring-2 focus:ring-pathway-green/20 transition-all bg-linen-white/50 h-auto shadow-none" />
                 </div>
                 <div>
                   <Label htmlFor="clientEmail" className="text-[10px] font-bold uppercase text-deep-forest/50 block mb-1.5">Client Email *</Label>
-                  <Input id="clientEmail" type="email" required value={clientData.clientEmail} onChange={(e) => updateClientInfo('clientEmail', e.target.value)} className="w-full px-4 py-3 rounded-xl border border-deep-forest/10 text-deep-forest text-sm placeholder:text-deep-forest/40 focus:outline-none focus:border-pathway-green focus:ring-2 focus:ring-pathway-green/20 transition-all bg-linen-white/50 h-auto shadow-none" />
+                  <Input id="clientEmail" type="email" required value={clientData.clientEmail} onChange={(e) => updateClientInfo('clientEmail', e.target.value)} className="w-full px-4 py-3 rounded-xl border border-deep-forest/10 text-deep-forest text-sm focus:outline-none focus:border-pathway-green focus:ring-2 focus:ring-pathway-green/20 transition-all bg-linen-white/50 h-auto shadow-none" />
                 </div>
                 <div>
                   <Label htmlFor="propertyAddress" className="text-[10px] font-bold uppercase text-deep-forest/50 block mb-1.5">Property Address *</Label>
-                  <Input id="propertyAddress" required value={clientData.propertyAddress} onChange={(e) => updateClientInfo('propertyAddress', e.target.value)} className="w-full px-4 py-3 rounded-xl border border-deep-forest/10 text-deep-forest text-sm placeholder:text-deep-forest/40 focus:outline-none focus:border-pathway-green focus:ring-2 focus:ring-pathway-green/20 transition-all bg-linen-white/50 h-auto shadow-none" />
+                  <Input id="propertyAddress" required value={clientData.propertyAddress} onChange={(e) => updateClientInfo('propertyAddress', e.target.value)} className="w-full px-4 py-3 rounded-xl border border-deep-forest/10 text-deep-forest text-sm focus:outline-none focus:border-pathway-green focus:ring-2 focus:ring-pathway-green/20 transition-all bg-linen-white/50 h-auto shadow-none" />
                 </div>
                 <div>
                   <Label htmlFor="date" className="text-[10px] font-bold uppercase text-deep-forest/50 block mb-1.5">Date *</Label>
-                  <Input id="date" type="date" required value={clientData.date} onChange={(e) => updateClientInfo('date', e.target.value)} className="w-full px-4 py-3 rounded-xl border border-deep-forest/10 text-deep-forest text-sm placeholder:text-deep-forest/40 focus:outline-none focus:border-pathway-green focus:ring-2 focus:ring-pathway-green/20 transition-all bg-linen-white/50 h-auto shadow-none" />
+                  <Input id="date" type="date" required value={clientData.date} onChange={(e) => updateClientInfo('date', e.target.value)} className="w-full px-4 py-3 rounded-xl border border-deep-forest/10 text-deep-forest text-sm focus:outline-none focus:border-pathway-green focus:ring-2 focus:ring-pathway-green/20 transition-all bg-linen-white/50 h-auto shadow-none" />
                 </div>
                 <button type="submit" className="w-full bg-pathway-green text-white py-4 rounded-xl font-bold text-[15px] hover:brightness-110 transition-all shadow-lg shadow-pathway-green/20 mt-2 flex items-center justify-center gap-2">
                   Begin Inspection <ArrowRight className="w-4 h-4" />
@@ -200,7 +384,7 @@ export default function App() {
           </div>
         )}
 
-
+        {/* ── Checklist ── */}
         {step === 'checklist' && (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 flex flex-col">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
@@ -209,11 +393,6 @@ export default function App() {
                   <span className="text-amber-porch">10-Point</span> Vital Checklist
                 </h2>
                 <p className="text-deep-forest/70 text-xs mt-1 font-medium">{clientData.clientName} &bull; {clientData.propertyAddress}</p>
-              </div>
-              <div className="flex gap-4 text-[10px] font-bold uppercase text-deep-forest">
-                <span className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-pathway-green"></div> Pass</span>
-                <span className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-amber-porch"></div> Attention</span>
-                <span className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-red-600"></div> Fail</span>
               </div>
             </div>
 
@@ -249,6 +428,12 @@ export default function App() {
           </div>
         )}
 
+        {/* ── History ── */}
+        {step === 'history' && (
+          <HistoryDashboard onBack={() => setStep('client_info')} />
+        )}
+
+        {/* ── Generating ── */}
         {step === 'generating' && (
           <div className="flex flex-col items-center justify-center py-20 animate-in fade-in zoom-in-95 duration-500">
             <Loader2 className="w-16 h-16 text-pathway-green animate-spin mb-6" />
@@ -257,43 +442,44 @@ export default function App() {
           </div>
         )}
 
+        {/* ── Success ── */}
         {step === 'success' && (
           <div className="flex flex-col items-center justify-center py-16 animate-in fade-in zoom-in-95 duration-500">
             <div className="w-24 h-24 bg-green-100 text-pathway-green rounded-full flex items-center justify-center mb-6">
               <CheckCircle2 className="w-12 h-12" />
             </div>
             <h2 className="text-3xl font-bold text-deep-forest mb-3">Inspection Complete</h2>
-            <p className="text-slate-600 text-center max-w-sm mb-8 text-lg">
-              The PDF report and any uploaded photos have been downloaded to your device.
+            <p className="text-slate-600 text-center max-w-sm mb-2 text-lg">
+              The PDF report has been downloaded to your device.
             </p>
-            <Button 
-              variant="outline"
-              onClick={() => {
-                setClientData({ ...clientData, clientName: '', clientEmail: '', propertyAddress: '' });
-                setChecklistData({});
-                setStep('client_info');
-              }}
-              className="h-12 px-6"
-            >
-              Start Another Inspection
-            </Button>
+            {elapsedOnComplete > 0 && (
+              <p className="text-sm text-deep-forest/50 mb-8">
+                Total time on-site: <strong>{Math.floor(elapsedOnComplete / 60)}m {elapsedOnComplete % 60}s</strong>
+              </p>
+            )}
+            <div className="flex gap-3">
+              <Button variant="outline" onClick={handleStartAnother} className="h-12 px-6">
+                Start Another
+              </Button>
+              <button
+                onClick={() => setStep('history')}
+                className="h-12 px-6 rounded-xl bg-deep-forest text-white font-bold text-sm flex items-center gap-2 hover:brightness-110 transition-all"
+              >
+                <History className="w-4 h-4" /> View History
+              </button>
+            </div>
           </div>
         )}
 
+        {/* ── Error ── */}
         {step === 'error' && (
           <div className="flex flex-col items-center justify-center py-16 animate-in fade-in zoom-in-95 duration-500 text-center">
             <div className="w-24 h-24 bg-red-100 text-red-600 rounded-full flex items-center justify-center mb-6">
               <AlertCircle className="w-12 h-12" />
             </div>
-            <h2 className="text-3xl font-bold text-deep-forest mb-3">Failed to Send</h2>
-            <p className="text-red-600 max-w-sm mb-4 font-mono text-sm bg-red-50 p-3 rounded border border-red-100">
-              {errorMsg}
-            </p>
-            <p className="text-slate-500 mb-8 max-w-sm">Please ensure your RESEND_API_KEY is properly configured in the application secrets.</p>
-            <Button 
-              onClick={() => setStep('checklist')}
-              className="h-12 px-6 bg-deep-forest text-white"
-            >
+            <h2 className="text-3xl font-bold text-deep-forest mb-3">Failed to Generate</h2>
+            <p className="text-red-600 max-w-sm mb-4 font-mono text-sm bg-red-50 p-3 rounded border border-red-100">{errorMsg}</p>
+            <Button onClick={() => setStep('checklist')} className="h-12 px-6 bg-deep-forest text-white">
               Return to Checklist
             </Button>
           </div>
@@ -302,4 +488,3 @@ export default function App() {
     </div>
   );
 }
-

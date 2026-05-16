@@ -38,3 +38,22 @@ export interface InspectionReport {
   clientInfo: ClientData;
   checklist: Record<number, ChecklistItemData>;
 }
+
+// In-progress inspection auto-saved to localStorage
+export interface InspectionDraft {
+  id: string;
+  clientInfo: ClientData;
+  checklistData: Record<number, ChecklistItemData>;
+  startedAt: string;       // ISO timestamp
+  lastSavedAt: string;     // ISO timestamp
+  elapsedSeconds: number;  // accumulated stopwatch time
+}
+
+// Completed inspection stored in history
+export interface CompletedInspection {
+  id: string;
+  clientInfo: ClientData;
+  checklist: Record<number, ChecklistItemData>;
+  completedAt: string;     // ISO timestamp
+  durationSeconds: number; // total time on-site
+}
