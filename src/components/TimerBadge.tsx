@@ -1,12 +1,8 @@
-import { useTimer } from '../hooks/useTimer';
-
 interface TimerBadgeProps {
-  seedSeconds?: number;
+  formatted: string;
 }
 
-export function TimerBadge({ seedSeconds = 0 }: TimerBadgeProps) {
-  const { formatted } = useTimer(seedSeconds);
-
+export function TimerBadge({ formatted }: TimerBadgeProps) {
   return (
     <div className="flex flex-col items-center bg-deep-forest/40 border border-white/10 px-4 py-1 rounded-xl">
       <span className="text-[10px] uppercase font-bold text-white/60 flex items-center gap-1.5">
