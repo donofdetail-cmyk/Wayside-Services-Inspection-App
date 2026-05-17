@@ -1,9 +1,12 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { InspectionReport, CHECKLIST_ITEMS } from './types';
+import { InspectionReport } from './types';
 import { dmSansBoldBase64 } from './fonts';
 
-export async function generateAndDownloadPDF(report: InspectionReport): Promise<void> {
+export async function generateAndDownloadPDF(
+  report: InspectionReport,
+  templateItems: string[]
+): Promise<void> {
   const doc = new jsPDF();
 
   // Render Logo
@@ -62,10 +65,10 @@ export async function generateAndDownloadPDF(report: InspectionReport): Promise<
   doc.text(`Date: ${report.clientInfo.date}`, 14, 66);
   doc.text(`Technician: ${report.clientInfo.technicianName}`, 14, 73);
 
-  const tableData = CHECKLIST_ITEMS.map((item, index) => {
+  const tableData = templateItems.map((item, index) => {
     const data = report.checklist[index];
     let itemName = item;
-    if (index === 9 && data?.seasonalTaskName) {
+    if (index === templateItems.length - 1 && data?.seasonalTaskName) {
       itemName = `Seasonal: ${data.seasonalTaskName}`;
     }
 
@@ -93,7 +96,7 @@ export async function generateAndDownloadPDF(report: InspectionReport): Promise<
   let currentY = (doc as any).lastAutoTable.finalY + 15;
   let hasPhotos = false;
 
-  for (let i = 0; i < CHECKLIST_ITEMS.length; i++) {
+  for (let i = 0; i < templateItems.length; i++) {
     const data = report.checklist[i];
     if (data?.photoUrl) {
       if (!hasPhotos) {
@@ -105,7 +108,7 @@ export async function generateAndDownloadPDF(report: InspectionReport): Promise<
         hasPhotos = true;
       }
 
-      const itemName = i === 9 && data.seasonalTaskName ? data.seasonalTaskName : CHECKLIST_ITEMS[i];
+      const itemName = i === templateItems.length - 1 && data.seasonalTaskName ? data.seasonalTaskName : templateItems[i];
       doc.setFontSize(12);
       doc.text(itemName, 14, currentY);
       currentY += 5;
@@ -129,10 +132,10 @@ export async function generateAndDownloadPDF(report: InspectionReport): Promise<
   doc.save(pdfFileName);
 
   // Download photos separately
-  for (let i = 0; i < CHECKLIST_ITEMS.length; i++) {
+  for (let i = 0; i < templateItems.length; i++) {
     const data = report.checklist[i];
     if (data?.photoUrl) {
-      const itemName = i === 9 && data.seasonalTaskName ? data.seasonalTaskName : CHECKLIST_ITEMS[i];
+      const itemName = i === templateItems.length - 1 && data.seasonalTaskName ? data.seasonalTaskName : templateItems[i];
       const safeItemName = itemName.replace(/[^a-zA-Z0-9]/g, '_');
       const fileName = `${report.clientInfo.clientName.replace(/\\s+/g, '_')}_${safeItemName}_Photo.jpg`;
 

@@ -1,7 +1,8 @@
 import { useState, useMemo } from 'react';
-import { CompletedInspection, CHECKLIST_ITEMS } from '../types';
+import { CompletedInspection } from '../types';
 import { deleteHistoryRecord, loadHistory } from '../storage';
 import { generateAndDownloadPDF } from '../pdfGenerator';
+import { loadTemplate } from '../storage';
 import {
   Search,
   Trash2,
@@ -94,7 +95,7 @@ export function HistoryDashboard({ onBack }: HistoryDashboardProps) {
   const handleDownload = async (record: CompletedInspection) => {
     setDownloadingId(record.id);
     try {
-      await generateAndDownloadPDF({ clientInfo: record.clientInfo, checklist: record.checklist });
+      await generateAndDownloadPDF({ clientInfo: record.clientInfo, checklist: record.checklist }, loadTemplate());
     } finally {
       setDownloadingId(null);
     }

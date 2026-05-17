@@ -1,4 +1,4 @@
-export const CHECKLIST_ITEMS = [
+export const DEFAULT_CHECKLIST_ITEMS = [
   "HVAC Air Filter Inspection & Replacement",
   "Visual Plumbing Inspection",
   "Faucet & Fixture Performance Check",

@@ -1,7 +1,8 @@
-import { InspectionDraft, CompletedInspection, ClientData, ChecklistItemData, InspectionReport } from './types';
+import { InspectionDraft, CompletedInspection, ClientData, ChecklistItemData, InspectionReport, DEFAULT_CHECKLIST_ITEMS } from './types';
 
 const DRAFT_KEY = 'wayside_draft';
 const HISTORY_KEY = 'wayside_history';
+const TEMPLATE_KEY = 'wayside_template';
 
 // ─── Draft ────────────────────────────────────────────────────────────────────
 
@@ -65,5 +66,24 @@ export function deleteHistoryRecord(id: string): void {
     localStorage.setItem(HISTORY_KEY, JSON.stringify(updated));
   } catch (e) {
     console.error('Failed to delete history record', e);
+  }
+}
+
+// ─── Template ─────────────────────────────────────────────────────────────────
+
+export function loadTemplate(): string[] {
+  try {
+    const raw = localStorage.getItem(TEMPLATE_KEY);
+    return raw ? JSON.parse(raw) : DEFAULT_CHECKLIST_ITEMS;
+  } catch {
+    return DEFAULT_CHECKLIST_ITEMS;
+  }
+}
+
+export function saveTemplate(template: string[]): void {
+  try {
+    localStorage.setItem(TEMPLATE_KEY, JSON.stringify(template));
+  } catch (e) {
+    console.error('Failed to save template', e);
   }
 }

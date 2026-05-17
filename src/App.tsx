@@ -1,20 +1,21 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { CHECKLIST_ITEMS, ClientData, ChecklistItemData, InspectionReport, InspectionDraft } from './types';
+import { ClientData, ChecklistItemData, InspectionReport, InspectionDraft } from './types';
 import { ChecklistItemCard } from './components/ChecklistItemCard';
 import { TimerBadge } from './components/TimerBadge';
 import { HistoryDashboard } from './components/HistoryDashboard';
+import { SettingsPage } from './components/SettingsPage';
 import { generateAndDownloadPDF } from './pdfGenerator';
 import {
   saveDraft, loadDraft, clearDraft,
-  saveCompletedInspection, loadHistory,
+  saveCompletedInspection, loadHistory, loadTemplate
 } from './storage';
 import { useTimer } from './hooks/useTimer';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { ArrowRight, Loader2, CheckCircle2, AlertCircle, History, ClipboardList, Menu, X, LogOut } from 'lucide-react';
+import { ArrowRight, Loader2, CheckCircle2, AlertCircle, History, ClipboardList, Menu, X, LogOut, Settings } from 'lucide-react';
 
-type Step = 'login' | 'client_info' | 'checklist' | 'history' | 'generating' | 'success' | 'error';
+type Step = 'login' | 'client_info' | 'checklist' | 'history' | 'settings' | 'generating' | 'success' | 'error';
 
 const EMPTY_CLIENT: ClientData = {
   clientName: '',
@@ -27,6 +28,7 @@ const EMPTY_CLIENT: ClientData = {
 export default function App() {
   const [step, setStep] = useState<Step>('login');
   const [menuOpen, setMenuOpen] = useState(false);
+  const [templateItems, setTemplateItems] = useState<string[]>([]);
 
   // ── Auth ─────────────────────────────────────────────────────────────────
   const [loginName, setLoginName] = useState('');
@@ -118,6 +120,7 @@ export default function App() {
         setShowResumeBanner(true);
       }
     }
+    setTemplateItems(loadTemplate());
   }, []);
 
   // ── Auto-save draft while on checklist step ───────────────────────────────
@@ -202,10 +205,10 @@ export default function App() {
   };
 
   const handleComplete = async () => {
-    for (let i = 0; i < CHECKLIST_ITEMS.length; i++) {
+    for (let i = 0; i < templateItems.length; i++) {
       const item = checklistData[i];
       if (!item || !item.status) {
-        alert(`Please complete item #${i + 1}: ${CHECKLIST_ITEMS[i]}`);
+        alert(`Please complete item #${i + 1}: ${templateItems[i]}`);
         return;
       }
     }
@@ -216,7 +219,7 @@ export default function App() {
 
     try {
       const report: InspectionReport = { clientInfo: clientData, checklist: checklistData };
-      await generateAndDownloadPDF(report);
+      await generateAndDownloadPDF(report, templateItems);
       saveCompletedInspection(report, elapsed);
       clearDraft();
       setDraft(null);
@@ -290,6 +293,14 @@ export default function App() {
                   </span>
                 )}
               </button>
+
+              <button
+                onClick={() => { setTemplateItems(loadTemplate()); setStep('settings'); setMenuOpen(false); }}
+                className="flex items-center gap-3 px-4 py-3.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all text-sm font-semibold text-left"
+              >
+                <Settings className="w-4 h-4 text-pathway-green shrink-0" />
+                Settings
+              </button>
             </div>
 
             {/* Timer (pinned to bottom, checklist only) */}
@@ -343,7 +354,7 @@ export default function App() {
                   <div className="flex flex-col items-center bg-pathway-green px-3 py-1 rounded-xl shadow-inner">
                     <span className="text-[10px] uppercase font-bold text-white/80">Progress</span>
                     <span className="text-base font-bold leading-none text-white">
-                      {Math.round((Object.values(checklistData).filter(i => i && i.status).length / CHECKLIST_ITEMS.length) * 100)}%
+                      {Math.round((Object.values(checklistData).filter(i => i && i.status).length / templateItems.length) * 100)}%
                     </span>
                   </div>
                 )}
@@ -360,6 +371,17 @@ export default function App() {
                   )}
                 </button>
               </div>
+
+              {/* Desktop: settings button */}
+              {step !== 'settings' && (
+                <button
+                  onClick={() => { setTemplateItems(loadTemplate()); setStep('settings'); }}
+                  className="hidden md:flex items-center gap-1.5 text-white/60 hover:text-white transition-colors text-xs font-bold uppercase relative"
+                >
+                  <Settings className="w-4 h-4" />
+                  Settings
+                </button>
+              )}
 
               {/* Desktop: history button */}
               {step !== 'history' && (
@@ -398,7 +420,7 @@ export default function App() {
                     <div className="flex flex-col items-center bg-pathway-green px-3 py-1 rounded-xl shadow-inner">
                       <span className="text-[10px] uppercase font-bold text-white/80">Progress</span>
                       <span className="text-base font-bold leading-none text-white">
-                        {Math.round((Object.values(checklistData).filter(i => i && i.status).length / CHECKLIST_ITEMS.length) * 100)}%
+                        {Math.round((Object.values(checklistData).filter(i => i && i.status).length / templateItems.length) * 100)}%
                       </span>
                     </div>
                     <TimerBadge formatted={formattedTime} />
@@ -513,13 +535,13 @@ export default function App() {
             </div>
 
             <div className="space-y-6">
-              {CHECKLIST_ITEMS.map((item, index) => {
+              {templateItems.map((item, index) => {
                 const data = checklistData[index] || { status: '', notes: '' };
                 return (
                   <ChecklistItemCard
                     key={index}
                     itemTitle={`${index + 1}. ${item}`}
-                    isSeasonalTask={index === 9}
+                    isSeasonalTask={index === templateItems.length - 1}
                     status={data.status}
                     notes={data.notes}
                     photoUrls={data.photoUrls}
@@ -547,6 +569,11 @@ export default function App() {
         {/* ── History ── */}
         {step === 'history' && (
           <HistoryDashboard onBack={() => setStep('client_info')} />
+        )}
+
+        {/* ── Settings ── */}
+        {step === 'settings' && (
+          <SettingsPage onBack={() => { setTemplateItems(loadTemplate()); setStep('client_info'); }} />
         )}
 
         {/* ── Generating ── */}

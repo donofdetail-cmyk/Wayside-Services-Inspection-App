@@ -1,6 +1,7 @@
-import { useRef } from 'react';
-import { Camera, Plus, Trash2, X } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { Camera, Plus, Trash2, X, Edit3 } from 'lucide-react';
 import { InspectionStatus, Room } from '../types';
+import { PhotoMarkupModal } from './PhotoMarkupModal';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
@@ -25,8 +26,9 @@ export function ChecklistItemCard({
   rooms = [],
   seasonalTaskName,
   onUpdate,
-}: ChecklistItemCardProps) {
+  }: ChecklistItemCardProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [markupIndex, setMarkupIndex] = useState<number | null>(null);
 
   // Multiple photo upload — in-memory only, no device download
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -48,6 +50,14 @@ export function ChecklistItemCard({
 
   const removePhoto = (idx: number) =>
     onUpdate('photoUrls', photoUrls.filter((_, i) => i !== idx));
+
+  const handleMarkupSave = (newBase64: string) => {
+    if (markupIndex === null) return;
+    const newPhotos = [...photoUrls];
+    newPhotos[markupIndex] = newBase64;
+    onUpdate('photoUrls', newPhotos);
+    setMarkupIndex(null);
+  };
 
   // Room helpers
   const addRoom = () =>
@@ -240,13 +250,29 @@ export function ChecklistItemCard({
                   className="w-full h-full object-cover"
                   draggable={false}
                 />
-                <button
-                  type="button"
-                  onClick={() => removePhoto(idx)}
-                  className="absolute top-1.5 right-1.5 bg-black/50 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center transition-colors opacity-0 group-hover:opacity-100"
-                >
-                  <X className="w-3 h-3" />
-                </button>
+                
+                {/* Actions overlay */}
+                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-between p-1.5">
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => removePhoto(idx)}
+                      className="bg-black/60 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center transition-colors"
+                      title="Remove Photo"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                  
+                  <button
+                    type="button"
+                    onClick={() => setMarkupIndex(idx)}
+                    className="bg-black/60 hover:bg-pathway-green text-white rounded-lg py-1.5 px-2 flex items-center justify-center gap-1.5 transition-colors self-center w-full mt-auto backdrop-blur-sm"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                    <span className="text-[10px] font-bold uppercase tracking-wider">Draw</span>
+                  </button>
+                </div>
               </div>
             ))}
             <button
@@ -260,6 +286,15 @@ export function ChecklistItemCard({
           </div>
         )}
       </div>
+
+      {/* Markup Modal */}
+      {markupIndex !== null && photoUrls[markupIndex] && (
+        <PhotoMarkupModal
+          initialSrc={photoUrls[markupIndex]}
+          onSave={handleMarkupSave}
+          onClose={() => setMarkupIndex(null)}
+        />
+      )}
     </div>
   );
 }
