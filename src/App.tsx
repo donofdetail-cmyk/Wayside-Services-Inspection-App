@@ -283,7 +283,7 @@ export default function App() {
                 className="flex items-center gap-3 px-4 py-3.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all text-sm font-semibold text-left relative"
               >
                 <History className="w-4 h-4 text-pathway-green shrink-0" />
-                Inspection History
+                History
                 {historyCount > 0 && (
                   <span className="ml-auto bg-amber-porch text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
                     {historyCount}
@@ -294,12 +294,8 @@ export default function App() {
 
             {/* Timer (pinned to bottom, checklist only) */}
             {step === 'checklist' && (
-              <div className="px-5 py-4 border-t border-white/10">
-                <p className="text-[10px] uppercase font-bold text-white/40 tracking-wider mb-2">Time On-Site</p>
-                <div className="bg-white/5 border border-white/10 rounded-2xl p-4 flex items-center gap-3">
-                  <span className="w-2.5 h-2.5 rounded-full bg-pathway-green animate-pulse shrink-0" />
-                  <TimerBadge formatted={formattedTime} />
-                </div>
+              <div className="px-5 py-6 border-t border-white/10 flex justify-center">
+                <TimerBadge formatted={formattedTime} />
               </div>
             )}
 
