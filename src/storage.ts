@@ -1,3 +1,4 @@
+import { get, set, del } from 'idb-keyval';
 import { InspectionDraft, CompletedInspection, ClientData, ChecklistItemData, InspectionReport, DEFAULT_CHECKLIST_ITEMS } from './types';
 
 const DRAFT_KEY = 'wayside_draft';
@@ -6,42 +7,46 @@ const TEMPLATE_KEY = 'wayside_template';
 
 // ─── Draft ────────────────────────────────────────────────────────────────────
 
-export function saveDraft(draft: InspectionDraft): void {
+export async function saveDraft(draft: InspectionDraft): Promise<void> {
   try {
-    localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+    await set(DRAFT_KEY, draft);
   } catch (e) {
     console.error('Failed to save draft', e);
   }
 }
 
-export function loadDraft(): InspectionDraft | null {
+export async function loadDraft(): Promise<InspectionDraft | null> {
   try {
-    const raw = localStorage.getItem(DRAFT_KEY);
-    return raw ? (JSON.parse(raw) as InspectionDraft) : null;
+    const draft = await get<InspectionDraft>(DRAFT_KEY);
+    return draft || null;
   } catch {
     return null;
   }
 }
 
-export function clearDraft(): void {
-  localStorage.removeItem(DRAFT_KEY);
+export async function clearDraft(): Promise<void> {
+  try {
+    await del(DRAFT_KEY);
+  } catch (e) {
+    console.error('Failed to clear draft', e);
+  }
 }
 
 // ─── History ──────────────────────────────────────────────────────────────────
 
-export function loadHistory(): CompletedInspection[] {
+export async function loadHistory(): Promise<CompletedInspection[]> {
   try {
-    const raw = localStorage.getItem(HISTORY_KEY);
-    return raw ? (JSON.parse(raw) as CompletedInspection[]) : [];
+    const history = await get<CompletedInspection[]>(HISTORY_KEY);
+    return history || [];
   } catch {
     return [];
   }
 }
 
-export function saveCompletedInspection(
+export async function saveCompletedInspection(
   report: InspectionReport,
   durationSeconds: number
-): CompletedInspection {
+): Promise<CompletedInspection> {
   const record: CompletedInspection = {
     id: crypto.randomUUID(),
     clientInfo: report.clientInfo,
@@ -50,20 +55,20 @@ export function saveCompletedInspection(
     durationSeconds,
   };
 
-  const existing = loadHistory();
+  const existing = await loadHistory();
   existing.unshift(record); // newest first
   try {
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(existing));
+    await set(HISTORY_KEY, existing);
   } catch (e) {
     console.error('Failed to save history', e);
   }
   return record;
 }
 
-export function deleteHistoryRecord(id: string): void {
-  const updated = loadHistory().filter((r) => r.id !== id);
+export async function deleteHistoryRecord(id: string): Promise<void> {
+  const updated = (await loadHistory()).filter((r) => r.id !== id);
   try {
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(updated));
+    await set(HISTORY_KEY, updated);
   } catch (e) {
     console.error('Failed to delete history record', e);
   }
@@ -71,18 +76,18 @@ export function deleteHistoryRecord(id: string): void {
 
 // ─── Template ─────────────────────────────────────────────────────────────────
 
-export function loadTemplate(): string[] {
+export async function loadTemplate(): Promise<string[]> {
   try {
-    const raw = localStorage.getItem(TEMPLATE_KEY);
-    return raw ? JSON.parse(raw) : DEFAULT_CHECKLIST_ITEMS;
+    const template = await get<string[]>(TEMPLATE_KEY);
+    return template && template.length > 0 ? template : DEFAULT_CHECKLIST_ITEMS;
   } catch {
     return DEFAULT_CHECKLIST_ITEMS;
   }
 }
 
-export function saveTemplate(template: string[]): void {
+export async function saveTemplate(template: string[]): Promise<void> {
   try {
-    localStorage.setItem(TEMPLATE_KEY, JSON.stringify(template));
+    await set(TEMPLATE_KEY, template);
   } catch (e) {
     console.error('Failed to save template', e);
   }

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { CompletedInspection } from '../types';
 import { deleteHistoryRecord, loadHistory } from '../storage';
 import { generateAndDownloadPDF } from '../pdfGenerator';
@@ -46,10 +46,14 @@ function getStatusCounts(record: CompletedInspection) {
 }
 
 export function HistoryDashboard({ onBack }: HistoryDashboardProps) {
-  const [records, setRecords] = useState<CompletedInspection[]>(() => loadHistory());
+  const [records, setRecords] = useState<CompletedInspection[]>([]);
   const [query, setQuery] = useState('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadHistory().then(setRecords);
+  }, []);
 
   // ── Stats ────────────────────────────────────────────────────────────────
   const stats = useMemo(() => {
@@ -82,10 +86,10 @@ export function HistoryDashboard({ onBack }: HistoryDashboardProps) {
   }, [records, query]);
 
   // ── Actions ──────────────────────────────────────────────────────────────
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (deletingId === id) {
-      deleteHistoryRecord(id);
-      setRecords(loadHistory());
+      await deleteHistoryRecord(id);
+      setRecords(await loadHistory());
       setDeletingId(null);
     } else {
       setDeletingId(id);
@@ -95,7 +99,8 @@ export function HistoryDashboard({ onBack }: HistoryDashboardProps) {
   const handleDownload = async (record: CompletedInspection) => {
     setDownloadingId(record.id);
     try {
-      await generateAndDownloadPDF({ clientInfo: record.clientInfo, checklist: record.checklist }, loadTemplate());
+      const template = await loadTemplate();
+      await generateAndDownloadPDF({ clientInfo: record.clientInfo, checklist: record.checklist }, template);
     } finally {
       setDownloadingId(null);
     }

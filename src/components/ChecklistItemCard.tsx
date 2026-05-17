@@ -30,19 +30,42 @@ export function ChecklistItemCard({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [markupIndex, setMarkupIndex] = useState<number | null>(null);
 
-  // Multiple photo upload — in-memory only, no device download
+  // Image compression helper
+  const resizeImage = (file: File): Promise<string> => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 800;
+          let width = img.width;
+          let height = img.height;
+          
+          if (width > MAX_WIDTH) {
+            height = Math.round((height * MAX_WIDTH) / width);
+            width = MAX_WIDTH;
+          }
+          
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx?.drawImage(img, 0, 0, width, height);
+          // Compress to JPEG format with 0.7 quality to dramatically reduce size
+          resolve(canvas.toDataURL('image/jpeg', 0.7));
+        };
+        img.src = e.target?.result as string;
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  // Multiple photo upload — in-memory only, compressed via canvas
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
-    const readers = files.map(
-      (file) =>
-        new Promise<string>((resolve) => {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve(reader.result as string);
-          reader.readAsDataURL(file);
-        })
-    );
-    Promise.all(readers).then((newUrls) => {
+    const resizers = files.map(file => resizeImage(file));
+    Promise.all(resizers).then((newUrls) => {
       onUpdate('photoUrls', [...photoUrls, ...newUrls]);
     });
     e.target.value = '';

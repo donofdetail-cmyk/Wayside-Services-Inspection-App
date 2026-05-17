@@ -4,6 +4,7 @@ import { DEFAULT_CHECKLIST_ITEMS } from '../types';
 import { ArrowLeft, Save, Plus, Trash2, RotateCcw, Download, Upload, Settings as SettingsIcon } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { set } from 'idb-keyval';
 
 interface SettingsPageProps {
   onBack: () => void;
@@ -14,7 +15,7 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
   const [hasChanges, setHasChanges] = useState(false);
 
   useEffect(() => {
-    setTemplateItems(loadTemplate());
+    loadTemplate().then(setTemplateItems);
   }, []);
 
   const handleUpdateItem = (index: number, value: string) => {
@@ -42,18 +43,18 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
     }
   };
 
-  const handleSave = () => {
-    saveTemplate(templateItems);
+  const handleSave = async () => {
+    await saveTemplate(templateItems);
     setHasChanges(false);
     alert('Settings saved! New inspections will use this checklist.');
   };
 
   // ── Database Backup & Restore ──
 
-  const handleExportBackup = () => {
+  const handleExportBackup = async () => {
     const data = {
-      template: loadTemplate(),
-      history: loadHistory(),
+      template: await loadTemplate(),
+      history: await loadHistory(),
     };
     const json = JSON.stringify(data, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
@@ -75,14 +76,14 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
     }
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       try {
         const data = JSON.parse(event.target?.result as string);
-        if (data.template) saveTemplate(data.template);
-        if (data.history) localStorage.setItem('wayside_history', JSON.stringify(data.history));
+        if (data.template) await saveTemplate(data.template);
+        if (data.history) await set('wayside_history', data.history);
         
-        clearDraft(); // Prevent corrupt drafts
-        setTemplateItems(loadTemplate());
+        await clearDraft(); // Prevent corrupt drafts
+        setTemplateItems(await loadTemplate());
         alert('Backup imported successfully!');
       } catch (err) {
         alert('Failed to import backup. The file may be corrupted or invalid.');

@@ -29,6 +29,7 @@ export default function App() {
   const [step, setStep] = useState<Step>('login');
   const [menuOpen, setMenuOpen] = useState(false);
   const [templateItems, setTemplateItems] = useState<string[]>([]);
+  const [historyCount, setHistoryCount] = useState(0);
 
   // ── Auth ─────────────────────────────────────────────────────────────────
   const [loginName, setLoginName] = useState('');
@@ -114,13 +115,15 @@ export default function App() {
       setClientData(prev => ({ ...prev, technicianName: storedName }));
       setStep('client_info');
       // Check for an existing draft
-      const saved = loadDraft();
-      if (saved) {
-        setDraft(saved);
-        setShowResumeBanner(true);
-      }
+      loadDraft().then(saved => {
+        if (saved) {
+          setDraft(saved);
+          setShowResumeBanner(true);
+        }
+      });
     }
-    setTemplateItems(loadTemplate());
+    loadTemplate().then(setTemplateItems);
+    loadHistory().then(history => setHistoryCount(history.length));
   }, []);
 
   // ── Auto-save draft while on checklist step ───────────────────────────────
@@ -128,8 +131,8 @@ export default function App() {
   useEffect(() => {
     if (step !== 'checklist') return;
     if (autoSaveRef.current) clearTimeout(autoSaveRef.current);
-    autoSaveRef.current = setTimeout(() => {
-      const existing = loadDraft();
+    autoSaveRef.current = setTimeout(async () => {
+      const existing = await loadDraft();
       const updated: InspectionDraft = {
         id: existing?.id ?? crypto.randomUUID(),
         clientInfo: clientData,
@@ -138,7 +141,7 @@ export default function App() {
         lastSavedAt: new Date().toISOString(),
         elapsedSeconds: timerRef.current,
       };
-      saveDraft(updated);
+      await saveDraft(updated);
     }, 2000);
     return () => { if (autoSaveRef.current) clearTimeout(autoSaveRef.current); };
   }, [checklistData, clientData, step]);
@@ -155,14 +158,14 @@ export default function App() {
     }));
   };
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     const correctPin = import.meta.env.VITE_TECHNICIAN_PIN || '2468';
     if (loginPin === correctPin) {
       localStorage.setItem('wayside_technician_name', loginName);
       setClientData(prev => ({ ...prev, technicianName: loginName }));
       setLoginError('');
-      const saved = loadDraft();
+      const saved = await loadDraft();
       if (saved) { setDraft(saved); setShowResumeBanner(true); }
       setStep('client_info');
     } else {
@@ -198,8 +201,8 @@ export default function App() {
     setStep('checklist');
   };
 
-  const handleDismissDraft = () => {
-    clearDraft();
+  const handleDismissDraft = async () => {
+    await clearDraft();
     setDraft(null);
     setShowResumeBanner(false);
   };
@@ -220,8 +223,12 @@ export default function App() {
     try {
       const report: InspectionReport = { clientInfo: clientData, checklist: checklistData };
       await generateAndDownloadPDF(report, templateItems);
-      saveCompletedInspection(report, elapsed);
-      clearDraft();
+      await saveCompletedInspection(report, elapsed);
+      await clearDraft();
+      
+      const history = await loadHistory();
+      setHistoryCount(history.length);
+      
       setDraft(null);
       setStep('success');
     } catch (error: any) {
@@ -237,8 +244,6 @@ export default function App() {
     stopTimer();
     setStep('client_info');
   };
-
-  const historyCount = loadHistory().length;
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -295,7 +300,7 @@ export default function App() {
               </button>
 
               <button
-                onClick={() => { setTemplateItems(loadTemplate()); setStep('settings'); setMenuOpen(false); }}
+                onClick={() => { loadTemplate().then(setTemplateItems); setStep('settings'); setMenuOpen(false); }}
                 className="flex items-center gap-3 px-4 py-3.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all text-sm font-semibold text-left"
               >
                 <Settings className="w-4 h-4 text-pathway-green shrink-0" />
@@ -375,7 +380,7 @@ export default function App() {
               {/* Desktop: settings button */}
               {step !== 'settings' && (
                 <button
-                  onClick={() => { setTemplateItems(loadTemplate()); setStep('settings'); }}
+                  onClick={() => { loadTemplate().then(setTemplateItems); setStep('settings'); }}
                   className="hidden md:flex items-center gap-1.5 text-white/60 hover:text-white transition-colors text-xs font-bold uppercase relative"
                 >
                   <Settings className="w-4 h-4" />
@@ -386,7 +391,10 @@ export default function App() {
               {/* Desktop: history button */}
               {step !== 'history' && (
                 <button
-                  onClick={() => setStep('history')}
+                  onClick={() => {
+                    loadHistory().then(h => setHistoryCount(h.length));
+                    setStep('history');
+                  }}
                   className="hidden md:flex items-center gap-1.5 text-white/60 hover:text-white transition-colors text-xs font-bold uppercase relative"
                 >
                   <History className="w-4 h-4" />
@@ -573,7 +581,7 @@ export default function App() {
 
         {/* ── Settings ── */}
         {step === 'settings' && (
-          <SettingsPage onBack={() => { setTemplateItems(loadTemplate()); setStep('client_info'); }} />
+          <SettingsPage onBack={() => { loadTemplate().then(setTemplateItems); setStep('client_info'); }} />
         )}
 
         {/* ── Generating ── */}
