@@ -37,6 +37,8 @@ export interface ClientData {
 export interface InspectionReport {
   clientInfo: ClientData;
   checklist: Record<number, ChecklistItemData>;
+  clientSignature?: string; // base64 image
+  technicianSignature?: string; // base64 image
 }
 
 // In-progress inspection auto-saved to localStorage
@@ -44,6 +46,8 @@ export interface InspectionDraft {
   id: string;
   clientInfo: ClientData;
   checklistData: Record<number, ChecklistItemData>;
+  clientSignature?: string;
+  technicianSignature?: string;
   startedAt: string;       // ISO timestamp
   lastSavedAt: string;     // ISO timestamp
   elapsedSeconds: number;  // accumulated stopwatch time

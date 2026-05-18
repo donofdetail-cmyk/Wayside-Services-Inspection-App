@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Camera, Plus, Trash2, X, Edit3 } from 'lucide-react';
+import { Camera, Plus, Trash2, X, Edit3, Upload } from 'lucide-react';
 import { InspectionStatus, Room } from '../types';
 import { PhotoMarkupModal } from './PhotoMarkupModal';
 import { Input } from '@/components/ui/input';
@@ -28,10 +28,11 @@ export function ChecklistItemCard({
   onUpdate,
   }: ChecklistItemCardProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   const [markupIndex, setMarkupIndex] = useState<number | null>(null);
 
-  // Image compression helper
-  const resizeImage = (file: File): Promise<string> => {
+  // Image compression & watermarking helper
+  const resizeImage = (file: File, watermarkText: string): Promise<string> => {
     return new Promise((resolve) => {
       const reader = new FileReader();
       reader.onload = (e) => {
@@ -50,8 +51,19 @@ export function ChecklistItemCard({
           canvas.width = width;
           canvas.height = height;
           const ctx = canvas.getContext('2d');
-          ctx?.drawImage(img, 0, 0, width, height);
-          // Compress to JPEG format with 0.7 quality to dramatically reduce size
+          if (!ctx) return resolve('');
+
+          ctx.drawImage(img, 0, 0, width, height);
+
+          // Add watermark
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+          ctx.fillRect(0, height - 34, width, 34);
+          ctx.fillStyle = '#ffffff';
+          ctx.font = '14px sans-serif';
+          ctx.textAlign = 'right';
+          ctx.fillText(watermarkText, width - 12, height - 12);
+
+          // Compress to JPEG format with 0.7 quality
           resolve(canvas.toDataURL('image/jpeg', 0.7));
         };
         img.src = e.target?.result as string;
@@ -61,10 +73,26 @@ export function ChecklistItemCard({
   };
 
   // Multiple photo upload — in-memory only, compressed via canvas
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
-    const resizers = files.map(file => resizeImage(file));
+
+    let locationStr = '';
+    if (navigator.geolocation) {
+      try {
+        const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 3000 });
+        });
+        locationStr = `GPS: ${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)}`;
+      } catch (err) {
+        console.warn('Geolocation failed or timed out', err);
+      }
+    }
+
+    const timestamp = new Date().toLocaleString();
+    const watermarkText = locationStr ? `${timestamp} | ${locationStr}` : timestamp;
+
+    const resizers = files.map(file => resizeImage(file, watermarkText));
     Promise.all(resizers).then((newUrls) => {
       onUpdate('photoUrls', [...photoUrls, ...newUrls]);
     });
@@ -245,6 +273,15 @@ export function ChecklistItemCard({
         <input
           type="file"
           accept="image/*"
+          capture="environment"
+          multiple
+          ref={cameraInputRef}
+          className="hidden"
+          onChange={handlePhotoUpload}
+        />
+        <input
+          type="file"
+          accept="image/*"
           multiple
           ref={fileInputRef}
           className="hidden"
@@ -252,14 +289,24 @@ export function ChecklistItemCard({
         />
 
         {photoUrls.length === 0 ? (
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className={`w-full flex items-center justify-center gap-2 border border-dashed border-deep-forest/20 rounded-xl h-16 text-sm text-deep-forest/50 hover:text-pathway-green hover:border-pathway-green transition-colors ${bg}`}
-          >
-            <Camera className="w-4 h-4" />
-            Take Photo or Upload
-          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => cameraInputRef.current?.click()}
+              className={`flex-1 flex flex-col items-center justify-center gap-1.5 border border-dashed border-deep-forest/20 rounded-xl h-20 text-sm font-bold text-deep-forest/50 hover:text-pathway-green hover:border-pathway-green transition-colors ${bg}`}
+            >
+              <Camera className="w-5 h-5" />
+              Take Photo
+            </button>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className={`flex-1 flex flex-col items-center justify-center gap-1.5 border border-dashed border-deep-forest/20 rounded-xl h-20 text-sm font-bold text-deep-forest/50 hover:text-pathway-green hover:border-pathway-green transition-colors ${bg}`}
+            >
+              <Upload className="w-5 h-5" />
+              Upload
+            </button>
+          </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {photoUrls.map((url, idx) => (
@@ -298,14 +345,24 @@ export function ChecklistItemCard({
                 </div>
               </div>
             ))}
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className={`aspect-video rounded-xl border border-dashed border-deep-forest/20 flex flex-col items-center justify-center gap-1 text-deep-forest/40 hover:text-pathway-green hover:border-pathway-green transition-colors text-xs font-medium ${bg}`}
-            >
-              <Plus className="w-4 h-4" />
-              Add
-            </button>
+            <div className="flex gap-2 aspect-video">
+              <button
+                type="button"
+                onClick={() => cameraInputRef.current?.click()}
+                className={`flex-1 rounded-xl border border-dashed border-deep-forest/20 flex flex-col items-center justify-center gap-1 text-deep-forest/40 hover:text-pathway-green hover:border-pathway-green transition-colors text-[10px] font-bold uppercase tracking-wider ${bg}`}
+              >
+                <Camera className="w-4 h-4" />
+                Take
+              </button>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className={`flex-1 rounded-xl border border-dashed border-deep-forest/20 flex flex-col items-center justify-center gap-1 text-deep-forest/40 hover:text-pathway-green hover:border-pathway-green transition-colors text-[10px] font-bold uppercase tracking-wider ${bg}`}
+              >
+                <Upload className="w-4 h-4" />
+                Upload
+              </button>
+            </div>
           </div>
         )}
       </div>

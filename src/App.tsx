@@ -5,6 +5,8 @@ import { TimerBadge } from './components/TimerBadge';
 import { HistoryDashboard } from './components/HistoryDashboard';
 import { SettingsPage } from './components/SettingsPage';
 import { generateAndDownloadPDF } from './pdfGenerator';
+import { Toaster, toast } from 'sonner';
+import { SignaturePad } from './components/SignaturePad';
 import {
   saveDraft, loadDraft, clearDraft,
   saveCompletedInspection, loadHistory, loadTemplate
@@ -39,6 +41,8 @@ export default function App() {
   // ── Inspection data ───────────────────────────────────────────────────────
   const [clientData, setClientData] = useState<ClientData>(EMPTY_CLIENT);
   const [checklistData, setChecklistData] = useState<Record<number, ChecklistItemData>>({});
+  const [clientSignature, setClientSignature] = useState('');
+  const [technicianSignature, setTechnicianSignature] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
 
   // ── Draft / resume ────────────────────────────────────────────────────────
@@ -137,6 +141,8 @@ export default function App() {
         id: existing?.id ?? crypto.randomUUID(),
         clientInfo: clientData,
         checklistData,
+        clientSignature,
+        technicianSignature,
         startedAt: existing?.startedAt ?? new Date().toISOString(),
         lastSavedAt: new Date().toISOString(),
         elapsedSeconds: timerRef.current,
@@ -144,7 +150,7 @@ export default function App() {
       await saveDraft(updated);
     }, 2000);
     return () => { if (autoSaveRef.current) clearTimeout(autoSaveRef.current); };
-  }, [checklistData, clientData, step]);
+  }, [checklistData, clientData, step, clientSignature, technicianSignature]);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
   const updateClientInfo = (field: keyof ClientData, value: string) => {
@@ -178,6 +184,8 @@ export default function App() {
     stopTimer();
     setClientData(EMPTY_CLIENT);
     setChecklistData({});
+    setClientSignature('');
+    setTechnicianSignature('');
     setLoginPin('');
     setDraft(null);
     setShowResumeBanner(false);
@@ -196,9 +204,12 @@ export default function App() {
     if (!draft) return;
     setClientData(draft.clientInfo);
     setChecklistData(draft.checklistData);
+    if (draft.clientSignature) setClientSignature(draft.clientSignature);
+    if (draft.technicianSignature) setTechnicianSignature(draft.technicianSignature);
     setShowResumeBanner(false);
     startTimer(draft.elapsedSeconds);
     setStep('checklist');
+    toast.success('Draft restored');
   };
 
   const handleDismissDraft = async () => {
@@ -211,9 +222,19 @@ export default function App() {
     for (let i = 0; i < templateItems.length; i++) {
       const item = checklistData[i];
       if (!item || !item.status) {
-        alert(`Please complete item #${i + 1}: ${templateItems[i]}`);
+        toast.error(`Please complete item #${i + 1}: ${templateItems[i]}`);
         return;
       }
+    }
+
+    if (!technicianSignature) {
+      toast.error('Technician signature is required');
+      return;
+    }
+    
+    if (!clientSignature) {
+      toast.error('Client signature is required');
+      return;
     }
 
     const elapsed = stopTimer();
@@ -221,7 +242,12 @@ export default function App() {
     setStep('generating');
 
     try {
-      const report: InspectionReport = { clientInfo: clientData, checklist: checklistData };
+      const report: InspectionReport = { 
+        clientInfo: clientData, 
+        checklist: checklistData,
+        clientSignature,
+        technicianSignature
+      };
       await generateAndDownloadPDF(report, templateItems);
       await saveCompletedInspection(report, elapsed);
       await clearDraft();
@@ -241,6 +267,8 @@ export default function App() {
   const handleStartAnother = () => {
     setClientData(prev => ({ ...prev, clientName: '', clientEmail: '', propertyAddress: '' }));
     setChecklistData({});
+    setClientSignature('');
+    setTechnicianSignature('');
     stopTimer();
     setStep('client_info');
   };
@@ -248,6 +276,7 @@ export default function App() {
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-linen-white text-deep-forest pb-20 font-sans">
+      <Toaster position="top-center" richColors />
       {/* ── Mobile Menu Overlay ── */}
       {menuOpen && (
         <div
@@ -561,15 +590,29 @@ export default function App() {
               })}
             </div>
 
-            <div className="mt-10 pt-6 border-t border-deep-forest/10 flex justify-end">
-              <button
-                type="button"
-                onClick={handleComplete}
-                className="w-full sm:w-auto bg-pathway-green text-white py-4 px-10 rounded-xl font-bold text-[15px] hover:brightness-110 transition-all shadow-lg shadow-pathway-green/20 flex items-center justify-center gap-2"
-              >
-                Complete Inspection
-                <svg width="18" height="18" fill="currentColor" viewBox="0 0 16 16"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/></svg>
-              </button>
+            <div className="mt-10 pt-6 border-t border-deep-forest/10 flex flex-col gap-8">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <SignaturePad 
+                  label="Technician Signature *" 
+                  onSign={setTechnicianSignature} 
+                  initialSignature={technicianSignature} 
+                />
+                <SignaturePad 
+                  label="Client Signature *" 
+                  onSign={setClientSignature} 
+                  initialSignature={clientSignature} 
+                />
+              </div>
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={handleComplete}
+                  className="w-full sm:w-auto bg-pathway-green text-white py-4 px-10 rounded-xl font-bold text-[15px] hover:brightness-110 transition-all shadow-lg shadow-pathway-green/20 flex items-center justify-center gap-2"
+                >
+                  Complete Inspection
+                  <svg width="18" height="18" fill="currentColor" viewBox="0 0 16 16"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/></svg>
+                </button>
+              </div>
             </div>
           </div>
         )}

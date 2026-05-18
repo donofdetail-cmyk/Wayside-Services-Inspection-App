@@ -42,7 +42,7 @@ export async function generateAndDownloadPDF(
   // Logo Text
   doc.addFileToVFS('DMSans-Bold.ttf', dmSansBoldBase64);
   doc.addFont('DMSans-Bold.ttf', 'DMSans', 'bold');
-  
+
   doc.setFont('DMSans', 'bold');
   doc.setFontSize(18);
   doc.setTextColor(27, 58, 45); // Deep Forest Green (#1B3A2D)
@@ -72,10 +72,16 @@ export async function generateAndDownloadPDF(
       itemName = `Seasonal: ${data.seasonalTaskName}`;
     }
 
+    let notesText = data?.notes || '';
+    if (data?.rooms && data.rooms.length > 0) {
+      const roomNotes = data.rooms.map(r => `• ${r.name || 'Unnamed Room'}: ${r.notes || 'No notes'}`).join('\n');
+      notesText = notesText ? `${notesText}\n\nRooms:\n${roomNotes}` : `Rooms:\n${roomNotes}`;
+    }
+
     return [
       itemName,
       data?.status || 'N/A',
-      data?.notes || ''
+      notesText
     ];
   });
 
@@ -98,7 +104,7 @@ export async function generateAndDownloadPDF(
 
   for (let i = 0; i < templateItems.length; i++) {
     const data = report.checklist[i];
-    if (data?.photoUrl) {
+    if (data?.photoUrls && data.photoUrls.length > 0) {
       if (!hasPhotos) {
         doc.addPage();
         currentY = 20;
@@ -113,39 +119,70 @@ export async function generateAndDownloadPDF(
       doc.text(itemName, 14, currentY);
       currentY += 5;
 
-      try {
-        doc.addImage(data.photoUrl, 'JPEG', 14, currentY, 80, 60);
-      } catch (e) {
-        console.error("Failed to add image to PDF", e);
-      }
-      currentY += 70;
+      for (const photoUrl of data.photoUrls) {
+        try {
+          // Verify it's a data URL before adding
+          if (photoUrl.startsWith('data:image/')) {
+            doc.addImage(photoUrl, 'JPEG', 14, currentY, 80, 60);
+            currentY += 70;
 
-      if (currentY > 230) {
-        doc.addPage();
-        currentY = 20;
+            if (currentY > 230) {
+              doc.addPage();
+              currentY = 20;
+            }
+          }
+        } catch (e) {
+          console.error("Failed to add image to PDF", e);
+        }
       }
     }
   }
 
+  // Signatures
+  doc.addPage();
+  currentY = 20;
+  doc.setFontSize(16);
+  doc.text('Sign Off', 14, currentY);
+  currentY += 15;
+
+  doc.setFontSize(12);
+  doc.text('Technician Signature:', 14, currentY);
+  if (report.technicianSignature) {
+    try {
+      doc.addImage(report.technicianSignature, 'PNG', 14, currentY + 5, 80, 30);
+    } catch(e) {}
+  }
+  
+  currentY += 50;
+  doc.text('Client Signature:', 14, currentY);
+  if (report.clientSignature) {
+    try {
+      doc.addImage(report.clientSignature, 'PNG', 14, currentY + 5, 80, 30);
+    } catch(e) {}
+  }
+
   // Download PDF
-  const pdfFileName = `${report.clientInfo.clientName.replace(/\\s+/g, '_')}_Inspection_Report.pdf`;
+  const pdfFileName = `${report.clientInfo.clientName.replace(/\s+/g, '_')}_Inspection_Report.pdf`;
   doc.save(pdfFileName);
 
   // Download photos separately
   for (let i = 0; i < templateItems.length; i++) {
     const data = report.checklist[i];
-    if (data?.photoUrl) {
+    if (data?.photoUrls && data.photoUrls.length > 0) {
       const itemName = i === templateItems.length - 1 && data.seasonalTaskName ? data.seasonalTaskName : templateItems[i];
       const safeItemName = itemName.replace(/[^a-zA-Z0-9]/g, '_');
-      const fileName = `${report.clientInfo.clientName.replace(/\\s+/g, '_')}_${safeItemName}_Photo.jpg`;
+      
+      data.photoUrls.forEach((photoUrl, idx) => {
+        const fileName = `${report.clientInfo.clientName.replace(/\s+/g, '_')}_${safeItemName}_Photo_${idx+1}.jpg`;
 
-      // Trigger download for each photo
-      const link = document.createElement('a');
-      link.href = data.photoUrl;
-      link.download = fileName;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+        // Trigger download for each photo
+        const link = document.createElement('a');
+        link.href = photoUrl;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      });
     }
   }
 }
