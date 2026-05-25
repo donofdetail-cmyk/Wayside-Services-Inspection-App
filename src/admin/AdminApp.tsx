@@ -6,7 +6,7 @@ import { LayoutDashboard, Users, ClipboardList, LogOut, Loader2, MapPin, Search,
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 
-type AdminTab = 'dashboard' | 'inspections' | 'leads' | 'team';
+type AdminTab = 'dashboard' | 'inspections' | 'leads' | 'team' | 'settings';
 
 export default function AdminApp() {
   const [adminName, setAdminName] = useState<string | null>(null);
@@ -17,6 +17,9 @@ export default function AdminApp() {
   const [profiles, setProfiles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedInspection, setSelectedInspection] = useState<any | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [companySettings, setCompanySettings] = useState<any>(null);
+  const [templates, setTemplates] = useState<any[]>([]);
 
   const formatSeconds = (s: number) => {
     if (!s) return 'Unknown';
@@ -47,10 +50,12 @@ export default function AdminApp() {
     async function fetchData() {
       setLoading(true);
       try {
-        const [inspectionsRes, leadsRes, profilesRes] = await Promise.all([
+        const [inspectionsRes, leadsRes, profilesRes, settingsRes, templatesRes] = await Promise.all([
           supabase.from('inspections').select('*').order('created_at', { ascending: false }),
           supabase.from('d2d_leads').select('*').order('created_at', { ascending: false }),
-          supabase.from('profiles').select('*').order('created_at', { ascending: true })
+          supabase.from('profiles').select('*').order('created_at', { ascending: true }),
+          supabase.from('company_settings').select('*').single(),
+          supabase.from('inspection_templates').select('*').order('order_index', { ascending: true })
         ]);
         
         if (inspectionsRes.error) throw inspectionsRes.error;
@@ -60,6 +65,8 @@ export default function AdminApp() {
         setInspections(inspectionsRes.data || []);
         setLeads(leadsRes.data || []);
         setProfiles(profilesRes.data || []);
+        setCompanySettings(settingsRes.data || { company_name: 'Wayside Services' });
+        setTemplates(templatesRes.data || []);
       } catch (err: any) {
         console.error('Fetch error:', err);
         toast.error('Failed to load dashboard data');
@@ -128,6 +135,18 @@ export default function AdminApp() {
 
     return (
       <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <div className="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-deep-forest/5">
+          <div className="relative w-full max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-deep-forest/40" />
+            <Input 
+              placeholder="Search clients, addresses, or reps..." 
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="pl-10 bg-linen-white/50 border-deep-forest/10 rounded-xl"
+            />
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="bg-white p-6 rounded-2xl shadow-xl border border-deep-forest/5 flex flex-col items-center justify-center text-center">
             <div className="w-16 h-16 bg-pathway-green/10 text-pathway-green rounded-full flex items-center justify-center mb-4">
@@ -176,33 +195,70 @@ export default function AdminApp() {
     );
   };
 
+  const filteredInspections = inspections.filter(i => 
+    i.client_name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    i.property_address?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const exportInspectionsCSV = () => {
+    const headers = ['ID', 'Date', 'Client', 'Email', 'Phone', 'Address', 'Duration (s)', 'Technician ID', 'PDF URL'];
+    const csvContent = [
+      headers.join(','),
+      ...inspections.map(i => [
+        i.id, new Date(i.created_at).toISOString(), `"${i.client_name}"`, i.client_email || '', i.client_phone || '', 
+        `"${i.property_address}"`, i.duration_seconds || '', i.technician_id, i.pdf_url || ''
+      ].join(','))
+    ].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `wayside_inspections_${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+  };
+
+  const deleteInspection = async (id: string) => {
+    if (!confirm('Are you sure you want to permanently delete this inspection?')) return;
+    const { error } = await supabase.from('inspections').delete().eq('id', id);
+    if (error) toast.error('Failed to delete');
+    else {
+      toast.success('Inspection deleted');
+      setInspections(prev => prev.filter(i => i.id !== id));
+    }
+  };
+
   const renderInspections = () => (
     <div className="bg-white rounded-2xl shadow-xl border border-deep-forest/5 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="p-6 border-b border-deep-forest/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <h3 className="text-xl font-bold text-deep-forest flex items-center gap-2">
           <ClipboardList className="w-5 h-5 text-pathway-green" /> Inspection Reports
         </h3>
+        <Button onClick={exportInspectionsCSV} variant="outline" className="border-deep-forest/20 text-deep-forest gap-2 rounded-xl">
+          <Download className="w-4 h-4" /> Export CSV
+        </Button>
       </div>
       <div className="divide-y divide-deep-forest/5">
-        {inspections.length === 0 ? (
+        {filteredInspections.length === 0 ? (
           <div className="p-8 text-center text-deep-forest/50">No inspections found.</div>
         ) : (
-          inspections.map(insp => (
+          filteredInspections.map(insp => (
             <div key={insp.id} className="p-6 hover:bg-linen-white/30 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
+              <div className="flex-1">
                 <p className="font-bold text-deep-forest text-lg">{insp.client_name}</p>
                 <p className="text-sm text-deep-forest/60">{insp.property_address}</p>
                 <p className="text-xs font-bold text-deep-forest/40 uppercase tracking-wide mt-1">
                   {new Date(insp.created_at).toLocaleDateString()}
                 </p>
               </div>
-              <div className="text-right flex flex-col items-end gap-2 shrink-0">
+              <div className="flex items-center gap-3 shrink-0">
                 <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-pathway-green/10 text-pathway-green text-xs font-bold uppercase tracking-wide">
                   Completed
                 </span>
                 <Button variant="ghost" onClick={() => setSelectedInspection(insp)} className="text-xs font-bold text-deep-forest hover:bg-deep-forest/5 h-8">
                   View Details
                 </Button>
+                <button onClick={() => deleteInspection(insp.id)} className="w-8 h-8 rounded-lg hover:bg-red-50 text-deep-forest/20 hover:text-red-500 flex items-center justify-center transition-colors" title="Delete">
+                  <X className="w-4 h-4" />
+                </button>
               </div>
             </div>
           ))
@@ -344,54 +400,93 @@ export default function AdminApp() {
     </div>
   );
 
+  const filteredLeads = leads.filter(l => 
+    l.contact_name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    l.address?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    l.rep_name?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const exportLeadsCSV = () => {
+    const headers = ['ID', 'Date', 'Contact', 'Address', 'Status', 'Rep Name', 'Assigned Tech ID'];
+    const csvContent = [
+      headers.join(','),
+      ...leads.map(l => [
+        l.id, new Date(l.created_at).toISOString(), `"${l.contact_name}"`, `"${l.address}"`, l.status, `"${l.rep_name}"`, l.assigned_tech_id || ''
+      ].join(','))
+    ].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `wayside_leads_${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+  };
+
+  const deleteLead = async (id: string) => {
+    if (!confirm('Are you sure you want to permanently delete this lead?')) return;
+    const { error } = await supabase.from('d2d_leads').delete().eq('id', id);
+    if (error) toast.error('Failed to delete');
+    else {
+      toast.success('Lead deleted');
+      setLeads(prev => prev.filter(l => l.id !== id));
+    }
+  };
+
   const renderLeads = () => (
     <div className="bg-white rounded-2xl shadow-xl border border-deep-forest/5 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="p-6 border-b border-deep-forest/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <h3 className="text-xl font-bold text-deep-forest flex items-center gap-2">
           <MapPin className="w-5 h-5 text-amber-porch" /> D2D Leads
         </h3>
+        <Button onClick={exportLeadsCSV} variant="outline" className="border-deep-forest/20 text-deep-forest gap-2 rounded-xl">
+          <Download className="w-4 h-4" /> Export CSV
+        </Button>
       </div>
       <div className="divide-y divide-deep-forest/5">
-        {leads.length === 0 ? (
+        {filteredLeads.length === 0 ? (
           <div className="p-8 text-center text-deep-forest/50">No leads found.</div>
         ) : (
-          leads.map(lead => (
+          filteredLeads.map(lead => (
             <div key={lead.id} className="p-6 hover:bg-linen-white/30 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
+              <div className="flex-1">
                 <p className="font-bold text-deep-forest text-lg">{lead.contact_name || 'No Contact Name'}</p>
                 <p className="text-sm text-deep-forest/60">{lead.address}</p>
                 <p className="text-xs text-deep-forest/40 mt-1">Logged by {lead.rep_name}</p>
               </div>
-              <div className="text-right flex flex-col items-end gap-2">
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-deep-forest/10 text-deep-forest text-xs font-bold uppercase tracking-wide">
-                  {lead.status.replace('_', ' ')}
-                </span>
-                {lead.status === 'scheduled' && !lead.assigned_tech_id && (
-                  <select
-                    className="text-xs p-1.5 border border-deep-forest/20 rounded-md bg-white focus:outline-none"
-                    onChange={async (e) => {
-                      const techId = e.target.value;
-                      if (!techId) return;
-                      const { error } = await supabase.from('d2d_leads').update({ assigned_tech_id: techId }).eq('id', lead.id);
-                      if (error) toast.error('Failed to assign job');
-                      else {
-                        toast.success('Job assigned to tech!');
-                        setLeads(leads.map(l => l.id === lead.id ? { ...l, assigned_tech_id: techId } : l));
-                      }
-                    }}
-                    defaultValue=""
-                  >
-                    <option value="" disabled>Assign Tech...</option>
-                    {profiles.filter(p => p.role === 'technician').map(tech => (
-                      <option key={tech.id} value={tech.id}>{tech.full_name}</option>
-                    ))}
-                  </select>
-                )}
-                {lead.assigned_tech_id && (
-                  <span className="text-[10px] uppercase font-bold text-pathway-green">
-                    Assigned to {profiles.find(p => p.id === lead.assigned_tech_id)?.full_name || 'Tech'}
+              <div className="flex items-center gap-3 shrink-0">
+                <div className="text-right flex flex-col items-end gap-2">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-deep-forest/10 text-deep-forest text-xs font-bold uppercase tracking-wide">
+                    {lead.status.replace('_', ' ')}
                   </span>
-                )}
+                  {lead.status === 'scheduled' && !lead.assigned_tech_id && (
+                    <select
+                      className="text-xs p-1.5 border border-deep-forest/20 rounded-md bg-white focus:outline-none"
+                      onChange={async (e) => {
+                        const techId = e.target.value;
+                        if (!techId) return;
+                        const { error } = await supabase.from('d2d_leads').update({ assigned_tech_id: techId }).eq('id', lead.id);
+                        if (error) toast.error('Failed to assign job');
+                        else {
+                          toast.success('Job assigned to tech!');
+                          setLeads(leads.map(l => l.id === lead.id ? { ...l, assigned_tech_id: techId } : l));
+                        }
+                      }}
+                      defaultValue=""
+                    >
+                      <option value="" disabled>Assign Tech...</option>
+                      {profiles.filter(p => p.role === 'technician').map(tech => (
+                        <option key={tech.id} value={tech.id}>{tech.full_name}</option>
+                      ))}
+                    </select>
+                  )}
+                  {lead.assigned_tech_id && (
+                    <span className="text-[10px] uppercase font-bold text-pathway-green">
+                      Assigned to {profiles.find(p => p.id === lead.assigned_tech_id)?.full_name || 'Tech'}
+                    </span>
+                  )}
+                </div>
+                <button onClick={() => deleteLead(lead.id)} className="w-8 h-8 rounded-lg hover:bg-red-50 text-deep-forest/20 hover:text-red-500 flex items-center justify-center transition-colors" title="Delete">
+                  <X className="w-4 h-4" />
+                </button>
               </div>
             </div>
           ))
@@ -409,15 +504,21 @@ export default function AdminApp() {
       </div>
       <div className="divide-y divide-deep-forest/5">
         {profiles.map(profile => (
-          <div key={profile.id} className="p-6 hover:bg-linen-white/30 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div key={profile.id} className={`p-6 hover:bg-linen-white/30 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${profile.is_active === false ? 'opacity-50 grayscale' : ''}`}>
             <div>
-              <p className="font-bold text-deep-forest text-lg">{profile.full_name}</p>
+              <div className="flex items-center gap-2">
+                <p className="font-bold text-deep-forest text-lg">{profile.full_name}</p>
+                {profile.is_active === false && (
+                  <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-600 text-[10px] font-bold uppercase tracking-wider">Deactivated</span>
+                )}
+              </div>
               <p className="text-xs font-bold text-deep-forest/40 uppercase tracking-wide mt-1">Joined {new Date(profile.created_at).toLocaleDateString()}</p>
             </div>
             <div className="flex items-center gap-3">
               <select
-                className="text-sm p-2 border border-deep-forest/20 rounded-lg bg-white font-bold text-deep-forest focus:outline-none"
+                className="text-sm p-2 border border-deep-forest/20 rounded-lg bg-white font-bold text-deep-forest focus:outline-none disabled:opacity-50"
                 value={profile.role}
+                disabled={profile.is_active === false}
                 onChange={async (e) => {
                   const newRole = e.target.value;
                   const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', profile.id);
@@ -432,9 +533,125 @@ export default function AdminApp() {
                 <option value="rep">Sales Rep</option>
                 <option value="admin">Admin</option>
               </select>
+              
+              <Button 
+                variant={profile.is_active === false ? "outline" : "ghost"}
+                className={`text-sm font-bold ${profile.is_active === false ? 'text-pathway-green border-pathway-green' : 'text-red-500 hover:bg-red-50'}`}
+                onClick={async () => {
+                  const newStatus = profile.is_active === false ? true : false;
+                  if (!newStatus && !confirm(`Are you sure you want to lock out ${profile.full_name}? They will instantly lose access.`)) return;
+                  
+                  const { error } = await supabase.from('profiles').update({ is_active: newStatus }).eq('id', profile.id);
+                  if (error) toast.error('Failed to update status');
+                  else {
+                    toast.success(newStatus ? 'Account Reactivated' : 'Account Deactivated');
+                    setProfiles(profiles.map(p => p.id === profile.id ? { ...p, is_active: newStatus } : p));
+                  }
+                }}
+              >
+                {profile.is_active === false ? 'Reactivate' : 'Deactivate'}
+              </Button>
             </div>
           </div>
         ))}
+      </div>
+    </div>
+  );
+
+  const renderSettings = () => (
+    <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="bg-white rounded-2xl shadow-xl border border-deep-forest/5 p-6">
+        <h3 className="text-xl font-bold text-deep-forest mb-4">Company Profile</h3>
+        <div className="grid gap-4 max-w-md">
+          <div>
+            <label className="text-xs font-bold text-deep-forest/50 uppercase tracking-wider mb-1 block">Company Name</label>
+            <Input 
+              value={companySettings?.company_name || ''} 
+              onChange={e => setCompanySettings({...companySettings, company_name: e.target.value})}
+              className="font-bold border-deep-forest/20 focus-visible:ring-pathway-green"
+            />
+          </div>
+          <Button 
+            className="w-full bg-pathway-green hover:brightness-110 text-white font-bold"
+            onClick={async () => {
+              if (companySettings.id) {
+                await supabase.from('company_settings').update({ company_name: companySettings.company_name }).eq('id', companySettings.id);
+              } else {
+                await supabase.from('company_settings').insert([{ company_name: companySettings.company_name }]);
+              }
+              toast.success('Company settings saved!');
+            }}
+          >
+            Save Profile
+          </Button>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-xl border border-deep-forest/5 p-6">
+        <h3 className="text-xl font-bold text-deep-forest mb-1">Dynamic Checklists</h3>
+        <p className="text-sm text-deep-forest/60 mb-6">Create and modify the required inspection questions. The Technician App will automatically download these live.</p>
+        
+        <div className="flex flex-col gap-3 max-w-2xl">
+          {templates.map((tpl, idx) => (
+            <div key={tpl.id} className="flex items-center gap-3 bg-linen-white/50 p-3 rounded-xl border border-deep-forest/10">
+              <span className="w-6 h-6 flex items-center justify-center bg-deep-forest/5 rounded-md text-xs font-bold text-deep-forest/50">{idx + 1}</span>
+              <Input 
+                value={tpl.question_text}
+                onChange={e => {
+                  const newTpl = [...templates];
+                  newTpl[idx].question_text = e.target.value;
+                  setTemplates(newTpl);
+                }}
+                className="flex-1 border-none bg-white shadow-sm font-bold text-deep-forest"
+              />
+              <button 
+                onClick={async () => {
+                  if (confirm('Delete this question?')) {
+                    await supabase.from('inspection_templates').delete().eq('id', tpl.id);
+                    setTemplates(templates.filter(t => t.id !== tpl.id));
+                    toast.success('Question deleted');
+                  }
+                }}
+                className="w-8 h-8 flex items-center justify-center text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          ))}
+          
+          <Button 
+            variant="outline"
+            className="border-dashed border-2 border-deep-forest/20 text-deep-forest/60 hover:text-deep-forest hover:border-deep-forest/40 h-12 rounded-xl mt-2"
+            onClick={async () => {
+              const text = prompt('Enter new question:');
+              if (text) {
+                const { data, error } = await supabase.from('inspection_templates').insert([{
+                  order_index: templates.length,
+                  question_text: text
+                }]).select().single();
+                if (!error && data) {
+                  setTemplates([...templates, data]);
+                  toast.success('Question added!');
+                }
+              }
+            }}
+          >
+            + Add New Question
+          </Button>
+
+          <Button 
+            className="w-full bg-deep-forest text-white font-bold mt-4 shadow-lg h-12"
+            onClick={async () => {
+              // Update all template texts in DB
+              for (const t of templates) {
+                await supabase.from('inspection_templates').update({ question_text: t.question_text }).eq('id', t.id);
+              }
+              toast.success('All templates saved successfully!');
+            }}
+          >
+            Save All Template Changes
+          </Button>
+        </div>
       </div>
     </div>
   );
@@ -444,6 +661,7 @@ export default function AdminApp() {
     { id: 'inspections' as AdminTab, label: 'Inspections', icon: ClipboardList },
     { id: 'leads' as AdminTab, label: 'Leads', icon: MapPin },
     { id: 'team' as AdminTab, label: 'Team', icon: Users },
+    { id: 'settings' as AdminTab, label: 'Settings', icon: Search }, // Or any appropriate icon like Settings if available
   ];
 
   return (
@@ -539,6 +757,7 @@ export default function AdminApp() {
             {activeTab === 'inspections' && renderInspections()}
             {activeTab === 'leads' && renderLeads()}
             {activeTab === 'team' && renderTeam()}
+            {activeTab === 'settings' && renderSettings()}
           </>
         )}
       </main>

@@ -46,6 +46,10 @@ export function AuthLogin({ onLogin, requiredRole, title, subtitle, altLinkText,
             .select('*')
             .eq('id', data.user!.id)
             .single();
+          if (profile.is_active === false) {
+            await supabase.auth.signOut();
+            throw new Error(`Your account has been deactivated. Please contact an administrator.`);
+          }
           onLogin(data.session, profile);
         } else {
           setError('Account created. Check your email to verify (if enabled), or try logging in.');
@@ -68,6 +72,11 @@ export function AuthLogin({ onLogin, requiredRole, title, subtitle, altLinkText,
             .single();
 
           if (profileError) throw profileError;
+
+          if (profile.is_active === false) {
+            await supabase.auth.signOut();
+            throw new Error(`Your account has been deactivated. Please contact an administrator.`);
+          }
 
           if (profile.role !== requiredRole && profile.role !== 'admin') {
             await supabase.auth.signOut();

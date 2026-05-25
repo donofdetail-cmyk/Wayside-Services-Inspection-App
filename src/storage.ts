@@ -144,6 +144,18 @@ export async function deleteHistoryRecord(id: string): Promise<void> {
 
 export async function loadTemplate(): Promise<string[]> {
   try {
+    const { data, error } = await supabase.from('inspection_templates').select('question_text').order('order_index', { ascending: true });
+    if (!error && data && data.length > 0) {
+      const template = data.map(d => d.question_text);
+      await set(TEMPLATE_KEY, template); // cache it for offline
+      return template;
+    }
+  } catch (e) {
+    console.error('Failed to fetch templates from Supabase', e);
+  }
+
+  // Fallback to offline cache
+  try {
     const template = await get<string[]>(TEMPLATE_KEY);
     return template && template.length > 0 ? template : DEFAULT_CHECKLIST_ITEMS;
   } catch {
@@ -152,9 +164,6 @@ export async function loadTemplate(): Promise<string[]> {
 }
 
 export async function saveTemplate(template: string[]): Promise<void> {
-  try {
-    await set(TEMPLATE_KEY, template);
-  } catch (e) {
-    console.error('Failed to save template', e);
-  }
+  // Admin controls templates globally now. This prevents technicians from overwriting local templates.
+  console.warn('Template saving is now restricted to the Admin Portal.');
 }
