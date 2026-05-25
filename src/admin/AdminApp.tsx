@@ -2,19 +2,21 @@ import { useState, useEffect } from 'react';
 import { AuthLogin } from '../components/AuthLogin';
 import { supabase } from '../d2d/supabaseClient';
 import { Toaster, toast } from 'sonner';
-import { Menu, LayoutDashboard, Users, ClipboardList, LogOut, Loader2, MapPin, Search, FileText, Download, X, Calendar as CalendarIcon, BarChart3, Inbox, Clock, Send, Settings } from 'lucide-react';
+import { Menu, LayoutDashboard, Users, ClipboardList, LogOut, Loader2, MapPin, Search, FileText, Download, X, Calendar as CalendarIcon, BarChart3, Inbox, Clock, Send, Settings, Kanban } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { format, parseISO, startOfWeek, addDays, isSameDay } from 'date-fns';
 import { BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
 
-type AdminTab = 'dashboard' | 'clients' | 'analytics' | 'dispatch' | 'action_center' | 'inspections' | 'leads' | 'team' | 'settings';
+type AdminTab = 'dashboard' | 'clients' | 'pipeline' | 'analytics' | 'dispatch' | 'action_center' | 'inspections' | 'leads' | 'team' | 'settings';
 
 export default function AdminApp() {
   const [adminName, setAdminName] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<AdminTab>('dashboard');
   const [menuOpen, setMenuOpen] = useState(false);
   const [touchpoints, setTouchpoints] = useState<any[]>([]);
+  const [clientNotes, setClientNotes] = useState<any[]>([]);
+  const [communicationLogs, setCommunicationLogs] = useState<any[]>([]);
   
   const [inspections, setInspections] = useState<any[]>([]);
   const [leads, setLeads] = useState<any[]>([]);
@@ -22,6 +24,7 @@ export default function AdminApp() {
   const [loading, setLoading] = useState(true);
   const [selectedInspection, setSelectedInspection] = useState<any | null>(null);
   const [selectedLead, setSelectedLead] = useState<any | null>(null);
+  const [selectedClient, setSelectedClient] = useState<any | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [companySettings, setCompanySettings] = useState<any>(null);
   const [templates, setTemplates] = useState<any[]>([]);
@@ -55,13 +58,15 @@ export default function AdminApp() {
     async function fetchData() {
       setLoading(true);
       try {
-        const [inspectionsRes, leadsRes, profilesRes, settingsRes, templatesRes, touchpointsRes] = await Promise.all([
+        const [inspectionsRes, leadsRes, profilesRes, settingsRes, templatesRes, touchpointsRes, notesRes, commsRes] = await Promise.all([
           supabase.from('inspections').select('*').order('created_at', { ascending: false }),
           supabase.from('d2d_leads').select('*').order('created_at', { ascending: false }),
           supabase.from('profiles').select('*').order('created_at', { ascending: true }),
           supabase.from('company_settings').select('*').single(),
           supabase.from('inspection_templates').select('*').order('order_index', { ascending: true }),
-          supabase.from('client_touchpoints').select('*').order('scheduled_for', { ascending: true })
+          supabase.from('client_touchpoints').select('*').order('scheduled_for', { ascending: true }),
+          supabase.from('client_notes').select('*').order('created_at', { ascending: false }),
+          supabase.from('communication_logs').select('*').order('created_at', { ascending: false })
         ]);
         
         if (inspectionsRes.error) throw inspectionsRes.error;
@@ -74,6 +79,8 @@ export default function AdminApp() {
         setCompanySettings(settingsRes.data || { company_name: 'Wayside Services' });
         setTemplates(templatesRes.data || []);
         setTouchpoints(touchpointsRes.data || []);
+        setClientNotes(notesRes.data || []);
+        setCommunicationLogs(commsRes.data || []);
       } catch (err: any) {
         console.error('Fetch error:', err);
         toast.error('Failed to load dashboard data');
@@ -103,6 +110,16 @@ export default function AdminApp() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'client_touchpoints' }, () => {
         supabase.from('client_touchpoints').select('*').order('scheduled_for', { ascending: true }).then(res => {
           if (res.data) setTouchpoints(res.data);
+        });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'client_notes' }, () => {
+        supabase.from('client_notes').select('*').order('created_at', { ascending: false }).then(res => {
+          if (res.data) setClientNotes(res.data);
+        });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'communication_logs' }, () => {
+        supabase.from('communication_logs').select('*').order('created_at', { ascending: false }).then(res => {
+          if (res.data) setCommunicationLogs(res.data);
         });
       })
       .subscribe();
@@ -502,6 +519,88 @@ export default function AdminApp() {
     }
   };
 
+  const renderClientProfile = (c: any) => {
+    // Collect all timeline events for this client
+    const events: any[] = [];
+    c.leads.forEach((l: any) => events.push({ date: new Date(l.created_at), type: 'd2d', title: 'Door Knocked', desc: `Status: ${l.status.replace('_', ' ')}`, icon: MapPin }));
+    c.inspections.forEach((i: any) => events.push({ date: new Date(i.created_at), type: 'inspection', title: 'Inspection Completed', desc: `Technician: ${profiles.find(p => p.id === i.technician_id)?.full_name || 'Unknown'}`, icon: ClipboardList }));
+    c.touchpoints.forEach((t: any) => events.push({ date: new Date(t.created_at), type: 'touchpoint', title: `CRM: ${t.campaign_type ? t.campaign_type.replace(/_/g, ' ') : 'Nurture'}`, desc: `Status: ${t.status}`, icon: Inbox }));
+    
+    // Notes and Comms (assuming c.notes and c.comms are hydrated from state in the parent render)
+    const clientNotesList = clientNotes.filter(n => n.property_address === c.address);
+    clientNotesList.forEach(n => events.push({ date: new Date(n.created_at), type: 'note', title: `Note from ${n.author_name}`, desc: n.content, icon: FileText }));
+    
+    const clientComms = communicationLogs.filter(cl => cl.property_address === c.address);
+    clientComms.forEach(cl => events.push({ date: new Date(cl.created_at), type: 'comm', title: `${cl.direction === 'outbound' ? 'Sent' : 'Received'} ${cl.type.toUpperCase()}`, desc: cl.content, icon: Send }));
+
+    events.sort((a, b) => b.date.getTime() - a.date.getTime());
+
+    return (
+      <div className="bg-white rounded-2xl shadow-xl border border-deep-forest/5 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <div className="p-6 border-b border-deep-forest/10 flex items-center gap-4 bg-deep-forest text-white">
+          <button onClick={() => setSelectedClient(null)} className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+          <div>
+            <h3 className="text-2xl font-bold">{c.name}</h3>
+            <p className="text-white/60">{c.address}</p>
+          </div>
+        </div>
+        
+        <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Left Column: Info & Notes */}
+          <div className="lg:col-span-1 space-y-6">
+            <div className="bg-linen-white/30 p-4 rounded-xl border border-deep-forest/10">
+              <h4 className="font-bold text-deep-forest mb-3">Contact Information</h4>
+              <p className="text-sm text-deep-forest/70 mb-1"><strong className="text-deep-forest">Phone:</strong> {c.phone || 'N/A'}</p>
+              <p className="text-sm text-deep-forest/70"><strong className="text-deep-forest">Email:</strong> {c.email || 'N/A'}</p>
+            </div>
+
+            <div className="bg-linen-white/30 p-4 rounded-xl border border-deep-forest/10">
+              <h4 className="font-bold text-deep-forest mb-3 flex items-center gap-2"><FileText className="w-4 h-4 text-amber-porch" /> Add Note</h4>
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+                const form = e.target as HTMLFormElement;
+                const input = form.elements.namedItem('note') as HTMLTextAreaElement;
+                if (!input.value.trim()) return;
+                const { error } = await supabase.from('client_notes').insert([{ property_address: c.address, content: input.value, author_name: adminName }]);
+                if (!error) { toast.success('Note added'); input.value = ''; }
+                else toast.error('Failed to add note');
+              }}>
+                <textarea name="note" className="w-full text-sm p-3 border border-deep-forest/10 rounded-xl bg-white resize-none focus:outline-none mb-2" rows={3} placeholder="Type a note here..." required></textarea>
+                <Button type="submit" className="w-full bg-pathway-green text-white hover:brightness-110 font-bold h-9">Save Note</Button>
+              </form>
+            </div>
+          </div>
+
+          {/* Right Column: Activity Timeline */}
+          <div className="lg:col-span-2">
+            <h4 className="font-bold text-deep-forest mb-4 flex items-center gap-2"><Clock className="w-4 h-4 text-amber-porch" /> Activity Timeline</h4>
+            <div className="space-y-4 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-deep-forest/10 before:to-transparent">
+              {events.length === 0 ? <p className="text-sm text-deep-forest/50">No activity logged.</p> : events.map((ev, i) => {
+                const Icon = ev.icon;
+                return (
+                  <div key={i} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
+                    <div className="flex items-center justify-center w-10 h-10 rounded-full border-4 border-white bg-linen-white text-deep-forest shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 shadow-sm z-10">
+                      <Icon className="w-4 h-4" />
+                    </div>
+                    <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] bg-white p-4 rounded-xl border border-deep-forest/10 shadow-sm">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-bold text-sm text-deep-forest">{ev.title}</span>
+                        <span className="text-[10px] uppercase font-bold text-deep-forest/40">{ev.date.toLocaleDateString()}</span>
+                      </div>
+                      <p className="text-xs text-deep-forest/70">{ev.desc}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderClients = () => {
     const clientMap: Record<string, {
       name: string;
@@ -539,6 +638,12 @@ export default function AdminApp() {
 
     const clientsList = Object.values(clientMap).sort((a,b) => a.name.localeCompare(b.name));
 
+    if (selectedClient) {
+      // Re-find the latest state of the client so notes live-update
+      const currentClientState = clientsList.find(c => c.address === selectedClient.address) || selectedClient;
+      return renderClientProfile(currentClientState);
+    }
+
     return (
       <div className="bg-white rounded-2xl shadow-xl border border-deep-forest/5 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
         <div className="p-6 border-b border-deep-forest/10 flex justify-between items-center">
@@ -552,7 +657,11 @@ export default function AdminApp() {
             <div className="p-8 text-center text-deep-forest/50">No clients found.</div>
           ) : (
             clientsList.map((c, idx) => (
-              <div key={idx} className="p-6 hover:bg-linen-white/30 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div 
+                key={idx} 
+                onClick={() => setSelectedClient(c)}
+                className="p-6 hover:bg-linen-white/30 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-4 cursor-pointer"
+              >
                 <div className="flex-1">
                   <p className="font-bold text-deep-forest text-lg">{c.name}</p>
                   <p className="text-sm text-deep-forest/60">{c.address}</p>
@@ -573,6 +682,89 @@ export default function AdminApp() {
               </div>
             ))
           )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderPipeline = () => {
+    const columns = [
+      { id: 'new', label: 'New Leads', color: 'bg-deep-forest/5', border: 'border-deep-forest/10' },
+      { id: 'not_home', label: 'Not Home', color: 'bg-amber-porch/5', border: 'border-amber-porch/20' },
+      { id: 'not_interested', label: 'Not Interested', color: 'bg-red-50', border: 'border-red-200' },
+      { id: 'interested', label: 'Interested', color: 'bg-blue-50', border: 'border-blue-200' },
+      { id: 'scheduled', label: 'Scheduled', color: 'bg-pathway-green/10', border: 'border-pathway-green/20' }
+    ];
+
+    const handleDrop = async (e: React.DragEvent, newStatus: string) => {
+      e.preventDefault();
+      const leadId = e.dataTransfer.getData('lead_id');
+      if (!leadId) return;
+
+      // Optimistic update
+      setLeads(leads.map(l => l.id === leadId ? { ...l, status: newStatus } : l));
+      
+      const { error } = await supabase.from('d2d_leads').update({ status: newStatus }).eq('id', leadId);
+      if (error) {
+        toast.error('Failed to update status');
+      } else {
+        toast.success(`Moved to ${newStatus.replace('_', ' ')}`);
+      }
+    };
+
+    return (
+      <div className="h-full flex flex-col animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <div className="flex justify-between items-center mb-6 shrink-0">
+          <h3 className="text-xl font-bold text-deep-forest flex items-center gap-2">
+            <Kanban className="w-5 h-5 text-amber-porch" /> Sales Pipeline
+          </h3>
+        </div>
+        
+        <div className="flex-1 flex gap-4 overflow-x-auto pb-4 items-stretch min-h-[600px]">
+          {columns.map(col => {
+            const colLeads = leads.filter(l => l.status === col.id);
+            return (
+              <div 
+                key={col.id} 
+                className={`w-80 shrink-0 flex flex-col rounded-2xl border ${col.border} ${col.color}`}
+                onDragOver={e => e.preventDefault()}
+                onDrop={e => handleDrop(e, col.id)}
+              >
+                <div className="p-4 border-b border-black/5 shrink-0 flex justify-between items-center">
+                  <h4 className="font-bold text-sm text-deep-forest uppercase tracking-wider">{col.label}</h4>
+                  <span className="bg-white/50 px-2 py-0.5 rounded text-xs font-bold text-deep-forest/50">{colLeads.length}</span>
+                </div>
+                <div className="flex-1 p-3 flex flex-col gap-3 overflow-y-auto min-h-0">
+                  {colLeads.map(l => (
+                    <div 
+                      key={l.id} 
+                      draggable 
+                      onDragStart={e => {
+                        e.dataTransfer.setData('lead_id', l.id);
+                        e.currentTarget.style.opacity = '0.4';
+                      }}
+                      onDragEnd={e => {
+                        e.currentTarget.style.opacity = '1';
+                      }}
+                      className="bg-white p-4 rounded-xl shadow-sm border border-deep-forest/5 cursor-grab active:cursor-grabbing hover:shadow-md transition-all group relative"
+                    >
+                      <p className="font-bold text-sm text-deep-forest">{l.contact_name || 'Resident'}</p>
+                      <p className="text-xs text-deep-forest/60 mt-1 truncate">{l.address}</p>
+                      <div className="flex items-center justify-between mt-3">
+                        <p className="text-[10px] uppercase font-bold text-deep-forest/40">{new Date(l.created_at).toLocaleDateString()}</p>
+                        <p className="text-[10px] font-bold text-amber-porch bg-amber-porch/10 px-2 py-0.5 rounded">{l.rep_name}</p>
+                      </div>
+                    </div>
+                  ))}
+                  {colLeads.length === 0 && (
+                    <div className="flex-1 flex items-center justify-center border-2 border-dashed border-black/5 rounded-xl text-deep-forest/30 text-xs font-bold uppercase tracking-wider">
+                      Drop Here
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
     );
@@ -1029,12 +1221,13 @@ export default function AdminApp() {
 
   const tabs = [
     { id: 'dashboard' as AdminTab, label: 'Overview', icon: LayoutDashboard },
+    { id: 'pipeline' as AdminTab, label: 'Pipeline', icon: Kanban },
     { id: 'clients' as AdminTab, label: 'Clients', icon: Users },
     { id: 'analytics' as AdminTab, label: 'Analytics', icon: BarChart3 },
     { id: 'dispatch' as AdminTab, label: 'Dispatch', icon: CalendarIcon },
     { id: 'action_center' as AdminTab, label: 'Action Center', icon: Inbox },
     { id: 'inspections' as AdminTab, label: 'Inspections', icon: ClipboardList },
-    { id: 'leads' as AdminTab, label: 'Leads', icon: MapPin },
+    { id: 'leads' as AdminTab, label: 'Lead Map', icon: MapPin },
     { id: 'team' as AdminTab, label: 'Team', icon: Users },
     { id: 'settings' as AdminTab, label: 'Settings', icon: Settings }
   ];
@@ -1202,6 +1395,7 @@ export default function AdminApp() {
         ) : (
           <>
             {activeTab === 'dashboard' && renderDashboard()}
+            {activeTab === 'pipeline' && renderPipeline()}
             {activeTab === 'clients' && renderClients()}
             {activeTab === 'analytics' && renderAnalytics()}
             {activeTab === 'dispatch' && renderDispatch()}
