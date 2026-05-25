@@ -166,7 +166,7 @@ export default function App() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    const correctPin = import.meta.env.VITE_TECHNICIAN_PIN;
+    const correctPin = import.meta.env.VITE_TECHNICIAN_PIN || '2468';
     if (loginPin === correctPin) {
       localStorage.setItem('wayside_technician_name', loginName);
       setClientData(prev => ({ ...prev, technicianName: loginName }));

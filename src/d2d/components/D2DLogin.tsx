@@ -12,7 +12,7 @@ export function D2DLogin({ onLogin }: Props) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const correctPin = import.meta.env.VITE_D2D_PIN;
+    const correctPin = import.meta.env.VITE_D2D_PIN || '1357';
     if (pin === correctPin) {
       localStorage.setItem('d2d_rep_name', name);
       onLogin(name);
