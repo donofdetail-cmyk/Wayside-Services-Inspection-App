@@ -6,7 +6,7 @@ import { dmSansBoldBase64 } from './fonts';
 export async function generateAndDownloadPDF(
   report: InspectionReport,
   templateItems: string[]
-): Promise<void> {
+): Promise<Blob> {
   const doc = new jsPDF();
 
   // Render Logo
@@ -185,4 +185,6 @@ export async function generateAndDownloadPDF(
       });
     }
   }
+
+  return doc.output('blob');
 }

@@ -48,7 +48,8 @@ export async function loadHistory(): Promise<CompletedInspection[]> {
 export async function saveCompletedInspection(
   report: InspectionReport,
   durationSeconds: number,
-  technicianId: string
+  technicianId: string,
+  pdfBlob?: Blob
 ): Promise<CompletedInspection> {
   const record: CompletedInspection = {
     id: crypto.randomUUID(),
@@ -68,6 +69,26 @@ export async function saveCompletedInspection(
 
   // Attempt Supabase Sync
   if (technicianId) {
+    let pdfUrl = null;
+
+    // Upload PDF to Supabase Storage if provided
+    if (pdfBlob) {
+      const fileName = `${record.id}.pdf`;
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('reports')
+        .upload(fileName, pdfBlob, {
+          contentType: 'application/pdf',
+          upsert: true
+        });
+      
+      if (!uploadError && uploadData) {
+        const { data: publicUrlData } = supabase.storage.from('reports').getPublicUrl(fileName);
+        pdfUrl = publicUrlData.publicUrl;
+      } else {
+        console.error('Failed to upload PDF:', uploadError);
+      }
+    }
+
     const supabaseRecord = {
       id: record.id,
       technician_id: technicianId,
@@ -75,7 +96,8 @@ export async function saveCompletedInspection(
       client_email: record.clientInfo.clientEmail || null,
       property_address: record.clientInfo.propertyAddress,
       checklist_data: record.checklist as any,
-      created_at: record.completedAt
+      created_at: record.completedAt,
+      pdf_url: pdfUrl
     };
 
     const { error } = await supabase.from('inspections').insert([supabaseRecord]);

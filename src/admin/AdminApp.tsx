@@ -5,7 +5,7 @@ import { Toaster, toast } from 'sonner';
 import { LayoutDashboard, Users, ClipboardList, LogOut, Loader2, MapPin, Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 
-type AdminTab = 'dashboard' | 'inspections' | 'leads';
+type AdminTab = 'dashboard' | 'inspections' | 'leads' | 'team';
 
 export default function AdminApp() {
   const [adminName, setAdminName] = useState<string | null>(null);
@@ -13,6 +13,7 @@ export default function AdminApp() {
   
   const [inspections, setInspections] = useState<any[]>([]);
   const [leads, setLeads] = useState<any[]>([]);
+  const [profiles, setProfiles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -37,16 +38,19 @@ export default function AdminApp() {
     async function fetchData() {
       setLoading(true);
       try {
-        const [inspectionsRes, leadsRes] = await Promise.all([
+        const [inspectionsRes, leadsRes, profilesRes] = await Promise.all([
           supabase.from('inspections').select('*').order('created_at', { ascending: false }),
-          supabase.from('d2d_leads').select('*').order('created_at', { ascending: false })
+          supabase.from('d2d_leads').select('*').order('created_at', { ascending: false }),
+          supabase.from('profiles').select('*').order('created_at', { ascending: true })
         ]);
         
         if (inspectionsRes.error) throw inspectionsRes.error;
         if (leadsRes.error) throw leadsRes.error;
+        if (profilesRes.error) throw profilesRes.error;
 
         setInspections(inspectionsRes.data || []);
         setLeads(leadsRes.data || []);
+        setProfiles(profilesRes.data || []);
       } catch (err: any) {
         console.error('Fetch error:', err);
         toast.error('Failed to load dashboard data');
@@ -74,24 +78,72 @@ export default function AdminApp() {
     );
   }
 
-  const renderDashboard = () => (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="bg-white p-6 rounded-2xl shadow-xl border border-deep-forest/5 flex flex-col items-center justify-center text-center group cursor-pointer hover:-translate-y-1 transition-all" onClick={() => setActiveTab('inspections')}>
-        <div className="w-16 h-16 bg-pathway-green/10 text-pathway-green rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-          <ClipboardList className="w-8 h-8" />
+  const renderDashboard = () => {
+    const totalLeads = leads.length;
+    const appointmentsSet = leads.filter(l => l.status === 'scheduled').length;
+    const conversionRate = totalLeads > 0 ? Math.round((appointmentsSet / totalLeads) * 100) : 0;
+    
+    // Group leads by rep
+    const repStats = leads.reduce((acc, lead) => {
+      acc[lead.rep_name] = acc[lead.rep_name] || { total: 0, appointments: 0 };
+      acc[lead.rep_name].total++;
+      if (lead.status === 'scheduled') acc[lead.rep_name].appointments++;
+      return acc;
+    }, {} as Record<string, { total: number, appointments: number }>);
+    
+    const topReps = Object.entries(repStats)
+      .sort((a, b) => b[1].appointments - a[1].appointments)
+      .slice(0, 3);
+
+    return (
+      <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="bg-white p-6 rounded-2xl shadow-xl border border-deep-forest/5 flex flex-col items-center justify-center text-center">
+            <div className="w-16 h-16 bg-pathway-green/10 text-pathway-green rounded-full flex items-center justify-center mb-4">
+              <ClipboardList className="w-8 h-8" />
+            </div>
+            <h3 className="text-3xl font-bold text-deep-forest mb-1">{inspections.length}</h3>
+            <p className="text-sm font-bold uppercase tracking-wider text-deep-forest/50">Total Inspections</p>
+          </div>
+          <div className="bg-white p-6 rounded-2xl shadow-xl border border-deep-forest/5 flex flex-col items-center justify-center text-center">
+            <div className="w-16 h-16 bg-amber-porch/10 text-amber-porch rounded-full flex items-center justify-center mb-4">
+              <MapPin className="w-8 h-8" />
+            </div>
+            <h3 className="text-3xl font-bold text-deep-forest mb-1">{totalLeads}</h3>
+            <p className="text-sm font-bold uppercase tracking-wider text-deep-forest/50">D2D Leads Logged</p>
+          </div>
+          <div className="bg-white p-6 rounded-2xl shadow-xl border border-deep-forest/5 flex flex-col items-center justify-center text-center">
+            <div className="w-16 h-16 bg-deep-forest/10 text-deep-forest rounded-full flex items-center justify-center mb-4">
+              <Users className="w-8 h-8" />
+            </div>
+            <h3 className="text-3xl font-bold text-deep-forest mb-1">{conversionRate}%</h3>
+            <p className="text-sm font-bold uppercase tracking-wider text-deep-forest/50">Appt Conversion Rate</p>
+          </div>
         </div>
-        <h3 className="text-3xl font-bold text-deep-forest mb-1">{inspections.length}</h3>
-        <p className="text-sm font-bold uppercase tracking-wider text-deep-forest/50">Total Inspections</p>
-      </div>
-      <div className="bg-white p-6 rounded-2xl shadow-xl border border-deep-forest/5 flex flex-col items-center justify-center text-center group cursor-pointer hover:-translate-y-1 transition-all" onClick={() => setActiveTab('leads')}>
-        <div className="w-16 h-16 bg-amber-porch/10 text-amber-porch rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-          <MapPin className="w-8 h-8" />
+
+        <div className="bg-white p-6 rounded-2xl shadow-xl border border-deep-forest/5">
+          <h3 className="text-lg font-bold text-deep-forest mb-4">Top Performing Reps</h3>
+          <div className="divide-y divide-deep-forest/5">
+            {topReps.map(([name, stats], idx) => (
+              <div key={name} className="py-3 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-deep-forest/5 flex items-center justify-center text-sm font-bold text-deep-forest">
+                    {idx + 1}
+                  </div>
+                  <span className="font-bold text-deep-forest">{name}</span>
+                </div>
+                <div className="text-right">
+                  <span className="text-sm font-bold text-pathway-green">{stats.appointments} Appts</span>
+                  <span className="text-xs text-deep-forest/40 ml-2">({stats.total} doors)</span>
+                </div>
+              </div>
+            ))}
+            {topReps.length === 0 && <p className="text-sm text-deep-forest/50 py-2">No leads logged yet.</p>}
+          </div>
         </div>
-        <h3 className="text-3xl font-bold text-deep-forest mb-1">{leads.length}</h3>
-        <p className="text-sm font-bold uppercase tracking-wider text-deep-forest/50">D2D Leads Logged</p>
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderInspections = () => (
     <div className="bg-white rounded-2xl shadow-xl border border-deep-forest/5 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -113,10 +165,15 @@ export default function AdminApp() {
                   {new Date(insp.created_at).toLocaleDateString()}
                 </p>
               </div>
-              <div className="text-right">
+              <div className="text-right flex flex-col items-end gap-2">
                 <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-pathway-green/10 text-pathway-green text-xs font-bold uppercase tracking-wide">
                   Completed
                 </span>
+                {insp.pdf_url && (
+                  <a href={insp.pdf_url} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-amber-porch hover:underline">
+                    View PDF Report
+                  </a>
+                )}
               </div>
             </div>
           ))
@@ -143,10 +200,36 @@ export default function AdminApp() {
                 <p className="text-sm text-deep-forest/60">{lead.address}</p>
                 <p className="text-xs text-deep-forest/40 mt-1">Logged by {lead.rep_name}</p>
               </div>
-              <div className="text-right">
+              <div className="text-right flex flex-col items-end gap-2">
                 <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-deep-forest/10 text-deep-forest text-xs font-bold uppercase tracking-wide">
                   {lead.status.replace('_', ' ')}
                 </span>
+                {lead.status === 'scheduled' && !lead.assigned_tech_id && (
+                  <select
+                    className="text-xs p-1.5 border border-deep-forest/20 rounded-md bg-white focus:outline-none"
+                    onChange={async (e) => {
+                      const techId = e.target.value;
+                      if (!techId) return;
+                      const { error } = await supabase.from('d2d_leads').update({ assigned_tech_id: techId }).eq('id', lead.id);
+                      if (error) toast.error('Failed to assign job');
+                      else {
+                        toast.success('Job assigned to tech!');
+                        setLeads(leads.map(l => l.id === lead.id ? { ...l, assigned_tech_id: techId } : l));
+                      }
+                    }}
+                    defaultValue=""
+                  >
+                    <option value="" disabled>Assign Tech...</option>
+                    {profiles.filter(p => p.role === 'technician').map(tech => (
+                      <option key={tech.id} value={tech.id}>{tech.full_name}</option>
+                    ))}
+                  </select>
+                )}
+                {lead.assigned_tech_id && (
+                  <span className="text-[10px] uppercase font-bold text-pathway-green">
+                    Assigned to {profiles.find(p => p.id === lead.assigned_tech_id)?.full_name || 'Tech'}
+                  </span>
+                )}
               </div>
             </div>
           ))
@@ -155,10 +238,50 @@ export default function AdminApp() {
     </div>
   );
 
+  const renderTeam = () => (
+    <div className="bg-white rounded-2xl shadow-xl border border-deep-forest/5 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="p-6 border-b border-deep-forest/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <h3 className="text-xl font-bold text-deep-forest flex items-center gap-2">
+          <Users className="w-5 h-5 text-deep-forest" /> Employee Roster
+        </h3>
+      </div>
+      <div className="divide-y divide-deep-forest/5">
+        {profiles.map(profile => (
+          <div key={profile.id} className="p-6 hover:bg-linen-white/30 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <p className="font-bold text-deep-forest text-lg">{profile.full_name}</p>
+              <p className="text-xs font-bold text-deep-forest/40 uppercase tracking-wide mt-1">Joined {new Date(profile.created_at).toLocaleDateString()}</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <select
+                className="text-sm p-2 border border-deep-forest/20 rounded-lg bg-white font-bold text-deep-forest focus:outline-none"
+                value={profile.role}
+                onChange={async (e) => {
+                  const newRole = e.target.value;
+                  const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', profile.id);
+                  if (error) toast.error('Failed to update role');
+                  else {
+                    toast.success('Role updated successfully');
+                    setProfiles(profiles.map(p => p.id === profile.id ? { ...p, role: newRole } : p));
+                  }
+                }}
+              >
+                <option value="technician">Technician</option>
+                <option value="rep">Sales Rep</option>
+                <option value="admin">Admin</option>
+              </select>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
   const tabs = [
     { id: 'dashboard' as AdminTab, label: 'Overview', icon: LayoutDashboard },
     { id: 'inspections' as AdminTab, label: 'Inspections', icon: ClipboardList },
-    { id: 'leads' as AdminTab, label: 'Leads', icon: Users },
+    { id: 'leads' as AdminTab, label: 'Leads', icon: MapPin },
+    { id: 'team' as AdminTab, label: 'Team', icon: Users },
   ];
 
   return (
@@ -253,6 +376,7 @@ export default function AdminApp() {
             {activeTab === 'dashboard' && renderDashboard()}
             {activeTab === 'inspections' && renderInspections()}
             {activeTab === 'leads' && renderLeads()}
+            {activeTab === 'team' && renderTeam()}
           </>
         )}
       </main>

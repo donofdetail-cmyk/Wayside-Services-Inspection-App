@@ -19,7 +19,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Loader2, CheckCircle2, AlertCircle, History, ClipboardList, Menu, X, LogOut, Settings, User, Lock, Mail, MapPin, Calendar } from 'lucide-react';
 
-type Step = 'login' | 'client_info' | 'checklist' | 'history' | 'settings' | 'generating' | 'success' | 'error';
+type Step = 'login' | 'dashboard' | 'client_info' | 'checklist' | 'history' | 'settings' | 'generating' | 'success' | 'error';
 
 const EMPTY_CLIENT: ClientData = {
   clientName: '',
@@ -59,6 +59,25 @@ export default function App() {
   // Track elapsed in a ref (not re-rendered state) for perf
   const timerRef = useRef(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // ── Scheduled Jobs ────────────────────────────────────────────────────────
+  const [scheduledJobs, setScheduledJobs] = useState<any[]>([]);
+  const [loadingJobs, setLoadingJobs] = useState(false);
+
+  const fetchScheduledJobs = useCallback(async (techId: string) => {
+    setLoadingJobs(true);
+    const { data, error } = await supabase
+      .from('d2d_leads')
+      .select('*')
+      .eq('assigned_tech_id', techId)
+      .eq('status', 'scheduled')
+      .order('created_at', { ascending: false });
+    
+    if (!error && data) {
+      setScheduledJobs(data);
+    }
+    setLoadingJobs(false);
+  }, []);
   const displayRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const formatSeconds = (s: number) => {
@@ -119,7 +138,8 @@ export default function App() {
     const storedId = localStorage.getItem('wayside_technician_id');
     if (storedName && storedId) {
       setClientData(prev => ({ ...prev, technicianName: storedName, technicianId: storedId }));
-      setStep('client_info');
+      setStep('dashboard');
+      fetchScheduledJobs(storedId);
       loadDraft().then(saved => {
         if (saved) {
           setDraft(saved);
@@ -180,6 +200,7 @@ export default function App() {
     setClientSignature('');
     setTechnicianSignature('');
     setDraft(null);
+    setScheduledJobs([]);
     setShowResumeBanner(false);
     setStep('login');
   };
@@ -240,8 +261,8 @@ export default function App() {
         clientSignature,
         technicianSignature
       };
-      await generateAndDownloadPDF(report, templateItems);
-      await saveCompletedInspection(report, elapsed, clientData.technicianId || '');
+      const pdfBlob = await generateAndDownloadPDF(report, templateItems);
+      await saveCompletedInspection(report, elapsed, clientData.technicianId || '', pdfBlob);
       await clearDraft();
       
       const history = await loadHistory();
@@ -257,11 +278,36 @@ export default function App() {
   };
 
   const handleStartAnother = () => {
-    setClientData(prev => ({ ...prev, clientName: '', clientEmail: '', propertyAddress: '' }));
+    setClientData(prev => ({ 
+      ...EMPTY_CLIENT, 
+      technicianName: prev.technicianName,
+      technicianId: prev.technicianId 
+    }));
     setChecklistData({});
     setClientSignature('');
     setTechnicianSignature('');
     stopTimer();
+    setStep('dashboard');
+    if (clientData.technicianId) fetchScheduledJobs(clientData.technicianId);
+  };
+
+  const handleStartWalkIn = () => {
+    setClientData(prev => ({ 
+      ...EMPTY_CLIENT, 
+      technicianName: prev.technicianName,
+      technicianId: prev.technicianId 
+    }));
+    setStep('client_info');
+  };
+
+  const handleStartScheduledJob = (job: any) => {
+    setClientData(prev => ({
+      ...EMPTY_CLIENT,
+      technicianName: prev.technicianName,
+      technicianId: prev.technicianId,
+      clientName: job.contact_name || '',
+      propertyAddress: job.address || '',
+    }));
     setStep('client_info');
   };
 
@@ -273,7 +319,8 @@ export default function App() {
           setClientData(prev => ({ ...prev, technicianName: profile.full_name, technicianId: profile.id }));
           localStorage.setItem('wayside_technician_name', profile.full_name);
           localStorage.setItem('wayside_technician_id', profile.id);
-          setStep('client_info');
+          setStep('dashboard');
+          fetchScheduledJobs(profile.id);
           // Check for draft
           loadDraft().then(saved => {
             if (saved) {
@@ -488,6 +535,87 @@ export default function App() {
 
       <main className="max-w-4xl w-full mx-auto p-4 md:p-6 flex flex-col gap-6">
 
+        {/* ── Dashboard ── */}
+        {step === 'dashboard' && (
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 flex flex-col gap-6">
+            
+            {/* Resume Draft Banner */}
+            {showResumeBanner && draft && (
+              <div className="bg-amber-porch/10 border border-amber-porch/30 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center gap-3 shadow-sm">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <AlertCircle className="w-5 h-5 text-amber-porch shrink-0" />
+                    <h3 className="font-bold text-amber-porch text-sm md:text-base truncate">Unfinished Inspection</h3>
+                  </div>
+                  <p className="text-xs md:text-sm text-deep-forest/70 truncate">
+                    {draft.clientInfo.clientName ? draft.clientInfo.clientName : 'Unknown Client'} 
+                    {draft.clientInfo.propertyAddress ? ` • ${draft.clientInfo.propertyAddress}` : ''}
+                  </p>
+                </div>
+                <div className="flex gap-2 w-full sm:w-auto">
+                  <Button variant="outline" onClick={() => { clearDraft(); setDraft(null); setShowResumeBanner(false); }} className="flex-1 sm:flex-none border-amber-porch/20 text-deep-forest hover:bg-amber-porch/10">Discard</Button>
+                  <Button onClick={() => {
+                    setClientData(draft.clientInfo);
+                    setChecklistData(draft.checklistData);
+                    setClientSignature(draft.clientSignature);
+                    setTechnicianSignature(draft.technicianSignature);
+                    setShowResumeBanner(false);
+                    setStep('checklist');
+                    startTimer(draft.elapsedSeconds || 0);
+                  }} className="flex-1 sm:flex-none bg-amber-porch hover:bg-amber-porch/90 text-white font-bold border-none">Resume</Button>
+                </div>
+              </div>
+            )}
+
+            <div className="bg-white rounded-2xl shadow-xl border border-deep-forest/5 p-6 md:p-8">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+                <div>
+                  <h2 className="text-2xl font-bold text-deep-forest">Welcome back, {clientData.technicianName.split(' ')[0]}</h2>
+                  <p className="text-deep-forest/60 text-sm mt-1">Here are your scheduled jobs for today.</p>
+                </div>
+                <Button onClick={handleStartWalkIn} className="bg-pathway-green hover:brightness-110 text-white font-bold rounded-xl h-12 shadow-lg shadow-pathway-green/20">
+                  Start Walk-In Inspection
+                </Button>
+              </div>
+
+              {loadingJobs ? (
+                <div className="py-12 flex flex-col items-center justify-center text-deep-forest/40">
+                  <Loader2 className="w-8 h-8 animate-spin mb-3 text-pathway-green" />
+                  <span className="text-sm font-bold uppercase tracking-wider">Loading Jobs...</span>
+                </div>
+              ) : scheduledJobs.length === 0 ? (
+                <div className="py-12 flex flex-col items-center justify-center text-center bg-linen-white/50 rounded-xl border border-dashed border-deep-forest/10">
+                  <ClipboardList className="w-12 h-12 text-deep-forest/20 mb-3" />
+                  <p className="text-deep-forest/50 font-bold">No jobs scheduled right now.</p>
+                  <p className="text-deep-forest/40 text-sm mt-1">Enjoy the downtime or start a walk-in!</p>
+                </div>
+              ) : (
+                <div className="grid gap-3">
+                  {scheduledJobs.map(job => (
+                    <div key={job.id} onClick={() => handleStartScheduledJob(job)} className="group bg-linen-white hover:bg-pathway-green/5 border border-deep-forest/10 hover:border-pathway-green/30 p-4 rounded-xl cursor-pointer transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-pathway-green text-white">Scheduled</span>
+                          <h3 className="font-bold text-deep-forest text-lg group-hover:text-pathway-green transition-colors">{job.contact_name}</h3>
+                        </div>
+                        <div className="flex items-center gap-3 text-sm text-deep-forest/60">
+                          <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5" /> {job.address}</span>
+                        </div>
+                        {job.notes && (
+                          <p className="text-xs text-deep-forest/50 mt-2 bg-white/50 px-3 py-2 rounded-lg border border-deep-forest/5 italic">"{job.notes}"</p>
+                        )}
+                      </div>
+                      <Button variant="ghost" className="shrink-0 text-pathway-green group-hover:bg-pathway-green group-hover:text-white transition-all rounded-lg font-bold">
+                        Start Job
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* ── Client Info ── */}
         {step === 'client_info' && (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -676,8 +804,8 @@ export default function App() {
             </div>
             <h2 className="text-3xl font-bold text-deep-forest mb-3">Failed to Generate</h2>
             <p className="text-red-600 max-w-sm mb-4 font-mono text-sm bg-red-50 p-3 rounded border border-red-100">{errorMsg}</p>
-            <Button onClick={() => setStep('checklist')} className="h-12 px-6 bg-deep-forest text-white">
-              Return to Checklist
+            <Button variant="ghost" onClick={() => setStep('dashboard')} className="w-full h-12 font-bold text-deep-forest hover:bg-deep-forest/5">
+              Back to Dashboard
             </Button>
           </div>
         )}
