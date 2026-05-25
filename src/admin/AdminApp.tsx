@@ -48,6 +48,9 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
   const [zoneForm, setZoneForm] = useState({ name: '', color: '#1D3B34' });
   const [selectedZone, setSelectedZone] = useState<TerritoryZone | null>(null);
 
+  const [clientModalOpen, setClientModalOpen] = useState(false);
+  const [clientForm, setClientForm] = useState<{id?: string, full_name: string, email: string, phone: string}>({ full_name: '', email: '', phone: '' });
+
   const formatSeconds = (s: number) => {
     if (!s) return 'Unknown';
     const m = Math.floor(s / 60);
@@ -188,7 +191,50 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
   };
 
 
+  const handleSaveClient = async () => {
+    if (!clientForm.full_name.trim()) return toast.error("Full Name is required");
+    
+    if (clientForm.id) {
+      const { error } = await supabase.from('customers').update({
+        full_name: clientForm.full_name,
+        email: clientForm.email,
+        phone: clientForm.phone
+      }).eq('id', clientForm.id);
+      
+      if (error) toast.error("Failed to update client");
+      else {
+        toast.success("Client updated!");
+        setCustomers(prev => prev.map(c => c.id === clientForm.id ? { ...c, ...clientForm } as any : c));
+        setClientModalOpen(false);
+      }
+    } else {
+      const { data, error } = await supabase.from('customers').insert([{
+        full_name: clientForm.full_name,
+        email: clientForm.email,
+        phone: clientForm.phone
+      }]).select().single();
+      
+      if (error) toast.error("Failed to create client");
+      else {
+        toast.success("Client added!");
+        setCustomers(prev => [...prev, data]);
+        setClientModalOpen(false);
+      }
+    }
+  };
 
+  const handleDeleteClient = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm("Are you sure you want to completely remove this client and all associated data?")) return;
+    
+    const { error } = await supabase.from('customers').delete().eq('id', id);
+    if (error) toast.error("Failed to delete client");
+    else {
+      toast.success("Client deleted");
+      setCustomers(prev => prev.filter(c => c.id !== id));
+      if (selectedClient?.id === id) setSelectedClient(null);
+    }
+  };
   const renderDashboard = () => {
     const totalLeads = leads.length;
     const appointmentsSet = leads.filter(l => l.status === 'scheduled').length;
@@ -741,14 +787,22 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
             </h3>
             <span className="bg-deep-forest/5 text-deep-forest px-3 py-1 rounded-full text-xs font-bold uppercase">{clientsList.length} Total</span>
           </div>
-          <div className="relative w-full sm:w-64">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-deep-forest/40" />
-            <Input 
-              placeholder="Search customers..." 
-              value={clientSearch}
-              onChange={e => setClientSearch(e.target.value)}
-              className="pl-9 h-9 bg-linen-white/50 border-deep-forest/10 rounded-lg text-sm"
-            />
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <div className="relative flex-1 sm:w-64">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-deep-forest/40" />
+              <Input 
+                placeholder="Search customers..." 
+                value={clientSearch}
+                onChange={e => setClientSearch(e.target.value)}
+                className="pl-9 h-9 bg-linen-white/50 border-deep-forest/10 rounded-lg text-sm"
+              />
+            </div>
+            <Button 
+              onClick={() => { setClientForm({ full_name: '', email: '', phone: '' }); setClientModalOpen(true); }}
+              className="bg-pathway-green text-white hover:brightness-110 h-9 px-4 shrink-0"
+            >
+              Add Client
+            </Button>
           </div>
         </div>
         <div className="divide-y divide-deep-forest/5">
@@ -774,11 +828,81 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
                     <span className="text-[10px] uppercase font-bold text-deep-forest/40 tracking-wider">Account ARR</span>
                     <span className="font-bold text-pathway-green">${c.totalArr.toLocaleString()}</span>
                   </div>
+                  <div className="flex items-center gap-2 mt-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setClientForm({ id: c.id, full_name: c.full_name, email: c.email || '', phone: c.phone || '' });
+                        setClientModalOpen(true);
+                      }}
+                      className="h-7 px-2 text-deep-forest/50 hover:text-deep-forest hover:bg-deep-forest/5"
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => handleDeleteClient(c.id, e)}
+                      className="h-7 px-2 text-red-500/50 hover:text-red-600 hover:bg-red-50"
+                    >
+                      Delete
+                    </Button>
+                  </div>
                 </div>
               </div>
             ))
           )}
         </div>
+
+        {/* Add/Edit Client Modal */}
+        {clientModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+            <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
+              <div className="px-6 py-4 border-b border-deep-forest/10 flex items-center justify-between">
+                <h3 className="font-bold text-deep-forest text-lg">{clientForm.id ? 'Edit Client' : 'Add Client'}</h3>
+                <button onClick={() => setClientModalOpen(false)} className="text-deep-forest/40 hover:text-deep-forest">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-6 flex flex-col gap-4">
+                <div>
+                  <label className="text-[10px] font-bold uppercase text-deep-forest/50 mb-1 block">Full Name *</label>
+                  <Input 
+                    value={clientForm.full_name} 
+                    onChange={e => setClientForm({...clientForm, full_name: e.target.value})}
+                    placeholder="e.g. John Smith"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold uppercase text-deep-forest/50 mb-1 block">Email</label>
+                  <Input 
+                    type="email"
+                    value={clientForm.email} 
+                    onChange={e => setClientForm({...clientForm, email: e.target.value})}
+                    placeholder="e.g. john@example.com"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold uppercase text-deep-forest/50 mb-1 block">Phone</label>
+                  <Input 
+                    type="tel"
+                    value={clientForm.phone} 
+                    onChange={e => setClientForm({...clientForm, phone: e.target.value})}
+                    placeholder="e.g. 555-0123"
+                  />
+                </div>
+                <Button 
+                  onClick={handleSaveClient} 
+                  className="w-full bg-pathway-green hover:bg-pathway-green/90 text-white font-bold py-6 rounded-xl mt-2"
+                >
+                  {clientForm.id ? 'Save Changes' : 'Create Client'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   };
