@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronDown, ChevronUp, Home } from 'lucide-react';
 
 const PLANS = [
   {
@@ -113,7 +113,7 @@ export function PitchGuide() {
                 : 'text-deep-forest/50 hover:text-deep-forest/70'
             }`}
           >
-            {t === 'plans' ? '💰 Plan Cards' : '💬 Objections'}
+            {t === 'plans' ? 'Plan Cards' : 'Objections'}
           </button>
         ))}
       </div>
@@ -134,7 +134,7 @@ export function PitchGuide() {
                     <p className="text-3xl font-black text-deep-forest mt-0.5">{plan.price}</p>
                     <p className="text-deep-forest/50 text-xs mt-0.5">{plan.sqft}</p>
                   </div>
-                  <span className="text-3xl">🏠</span>
+                  <Home className={`w-8 h-8 ${plan.textColor} opacity-40 mb-1`} />
                 </div>
               </div>
               {/* Feature list */}

@@ -68,10 +68,10 @@ export function LogDoorForm({ repName, initialLat, initialLng, onSave, onCancel 
   const labelClass = 'text-[10px] font-bold uppercase text-deep-forest/50 block mb-1.5';
 
   const outcomes: { value: LeadStatus; label: string; color: string }[] = [
-    { value: 'interested', label: '✅ Interested', color: '#1D9E75' },
-    { value: 'scheduled', label: '📅 Appt. Set', color: '#3B82F6' },
-    { value: 'not_home', label: '🟡 Not Home', color: '#EF9F27' },
-    { value: 'not_interested', label: '❌ Not Interested', color: '#EF4444' },
+    { value: 'interested', label: 'Interested', color: '#1D9E75' },
+    { value: 'scheduled', label: 'Appt. Set', color: '#3B82F6' },
+    { value: 'not_home', label: 'Not Home', color: '#EF9F27' },
+    { value: 'not_interested', label: 'Not Interested', color: '#EF4444' },
   ];
 
   const showContactFields = status === 'interested' || status === 'scheduled';
@@ -97,7 +97,7 @@ export function LogDoorForm({ repName, initialLat, initialLng, onSave, onCancel 
           />
         </div>
         {initialLat !== 0 && initialLat != null && (
-          <p className="text-[10px] italic text-deep-forest/40 mt-1 ml-1">📍 GPS location captured</p>
+          <p className="text-[10px] italic text-deep-forest/40 mt-1 ml-1">GPS location captured</p>
         )}
       </div>
 
