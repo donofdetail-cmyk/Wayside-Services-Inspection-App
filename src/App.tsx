@@ -15,7 +15,7 @@ import { useTimer } from './hooks/useTimer';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { ArrowRight, Loader2, CheckCircle2, AlertCircle, History, ClipboardList, Menu, X, LogOut, Settings, User, Lock, Mail, MapPin, Calendar } from 'lucide-react';
+import { Loader2, CheckCircle2, AlertCircle, History, ClipboardList, Menu, X, LogOut, Settings, User, Lock, Mail, MapPin, Calendar } from 'lucide-react';
 
 type Step = 'login' | 'client_info' | 'checklist' | 'history' | 'settings' | 'generating' | 'success' | 'error';
 
@@ -503,7 +503,7 @@ export default function App() {
             <p className="text-center mt-4 text-deep-forest/30 text-xs">
               Sales rep?{' '}
               <a href="/d2d" className="text-pathway-green hover:underline font-semibold">
-                Switch to D2D Portal →
+                Switch to D2D Portal
               </a>
             </p>
           </div>
@@ -576,7 +576,7 @@ export default function App() {
                   </div>
                 </div>
                 <button type="submit" className="w-full bg-pathway-green text-white py-4 rounded-xl font-bold text-[15px] hover:brightness-110 transition-all shadow-lg shadow-pathway-green/20 mt-2 flex items-center justify-center gap-2">
-                  Begin Inspection <ArrowRight className="w-4 h-4" />
+                  Begin Inspection
                 </button>
               </form>
             </div>

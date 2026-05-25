@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { loadTemplate, saveTemplate, loadHistory, clearDraft } from '../storage';
 import { DEFAULT_CHECKLIST_ITEMS } from '../types';
-import { ArrowLeft, Save, Plus, Trash2, RotateCcw, Download, Upload, Settings as SettingsIcon } from 'lucide-react';
+import { Save, Plus, Trash2, RotateCcw, Download, Upload, Settings as SettingsIcon } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { set } from 'idb-keyval';
@@ -102,7 +102,6 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
             onClick={onBack}
             className="flex items-center gap-1.5 text-deep-forest/60 hover:text-deep-forest transition-colors text-sm font-semibold"
           >
-            <ArrowLeft className="w-4 h-4" />
             Back
           </button>
           <div>

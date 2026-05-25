@@ -12,7 +12,6 @@ import {
   CheckCircle2,
   AlertCircle,
   XCircle,
-  ArrowLeft,
 } from 'lucide-react';
 
 interface HistoryDashboardProps {
@@ -115,7 +114,6 @@ export function HistoryDashboard({ onBack }: HistoryDashboardProps) {
           onClick={onBack}
           className="flex items-center gap-1.5 text-deep-forest/60 hover:text-deep-forest transition-colors text-sm font-semibold"
         >
-          <ArrowLeft className="w-4 h-4" />
           Back
         </button>
         <div>

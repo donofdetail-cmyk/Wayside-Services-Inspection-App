@@ -92,7 +92,7 @@ export function D2DLogin({ onLogin }: Props) {
                 type="submit"
                 className="w-full bg-pathway-green text-white py-4 rounded-xl font-bold text-[15px] hover:brightness-110 transition-all shadow-lg shadow-pathway-green/20 mt-2"
               >
-                Start My Shift →
+                Start My Shift
               </button>
             </form>
           </div>
@@ -100,7 +100,7 @@ export function D2DLogin({ onLogin }: Props) {
           <p className="text-center mt-5 text-deep-forest/40 text-xs">
             Looking for inspections?{' '}
             <a href="/" className="text-pathway-green hover:underline font-semibold">
-              Switch to Inspection App →
+              Switch to Inspection App
             </a>
           </p>
         </div>
