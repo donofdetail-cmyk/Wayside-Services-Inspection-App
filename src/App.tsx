@@ -15,7 +15,7 @@ import { useTimer } from './hooks/useTimer';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { ArrowRight, Loader2, CheckCircle2, AlertCircle, History, ClipboardList, Menu, X, LogOut, Settings } from 'lucide-react';
+import { ArrowRight, Loader2, CheckCircle2, AlertCircle, History, ClipboardList, Menu, X, LogOut, Settings, User, Lock, Mail, MapPin, Calendar } from 'lucide-react';
 
 type Step = 'login' | 'client_info' | 'checklist' | 'history' | 'settings' | 'generating' | 'success' | 'error';
 
@@ -483,11 +483,17 @@ export default function App() {
                 {loginError && <p className="text-red-500 text-xs font-bold -mb-2">{loginError}</p>}
                 <div>
                   <Label htmlFor="loginName" className="text-[10px] font-bold uppercase text-deep-forest/50 block mb-1.5">Your Name *</Label>
-                  <Input id="loginName" required value={loginName} onChange={(e) => setLoginName(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-deep-forest/10 text-deep-forest text-sm focus:outline-none focus:border-pathway-green focus:ring-2 focus:ring-pathway-green/20 transition-all bg-linen-white/50 h-auto shadow-none" />
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-deep-forest/30 pointer-events-none" />
+                    <Input id="loginName" required placeholder="Full name" value={loginName} onChange={(e) => setLoginName(e.target.value)} className="w-full pl-10 pr-4 py-3 rounded-xl border border-deep-forest/10 text-deep-forest text-sm focus:outline-none focus:border-pathway-green focus:ring-2 focus:ring-pathway-green/20 transition-all bg-linen-white/50 h-auto shadow-none" />
+                  </div>
                 </div>
                 <div>
                   <Label htmlFor="loginPin" className="text-[10px] font-bold uppercase text-deep-forest/50 block mb-1.5">Technician PIN *</Label>
-                  <Input id="loginPin" type="password" required value={loginPin} onChange={(e) => setLoginPin(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-deep-forest/10 text-deep-forest text-sm focus:outline-none focus:border-pathway-green focus:ring-2 focus:ring-pathway-green/20 transition-all bg-linen-white/50 h-auto shadow-none" />
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-deep-forest/30 pointer-events-none" />
+                    <Input id="loginPin" type="password" placeholder="••••" required value={loginPin} onChange={(e) => setLoginPin(e.target.value)} className="w-full pl-10 pr-4 py-3 rounded-xl border border-deep-forest/10 text-deep-forest text-sm focus:outline-none focus:border-pathway-green focus:ring-2 focus:ring-pathway-green/20 transition-all bg-linen-white/50 h-auto shadow-none" />
+                  </div>
                 </div>
                 <button type="submit" className="w-full bg-pathway-green text-white py-4 rounded-xl font-bold text-[15px] hover:brightness-110 transition-all shadow-lg shadow-pathway-green/20 mt-2">
                   Log In
@@ -543,19 +549,31 @@ export default function App() {
                 </div>
                 <div>
                   <Label htmlFor="clientName" className="text-[10px] font-bold uppercase text-deep-forest/50 block mb-1.5">Client Name *</Label>
-                  <Input id="clientName" required value={clientData.clientName} onChange={(e) => updateClientInfo('clientName', e.target.value)} className="w-full px-4 py-3 rounded-xl border border-deep-forest/10 text-deep-forest text-sm focus:outline-none focus:border-pathway-green focus:ring-2 focus:ring-pathway-green/20 transition-all bg-linen-white/50 h-auto shadow-none" />
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-deep-forest/30 pointer-events-none" />
+                    <Input id="clientName" required placeholder="John Doe" value={clientData.clientName} onChange={(e) => updateClientInfo('clientName', e.target.value)} className="w-full pl-10 pr-4 py-3 rounded-xl border border-deep-forest/10 text-deep-forest text-sm focus:outline-none focus:border-pathway-green focus:ring-2 focus:ring-pathway-green/20 transition-all bg-linen-white/50 h-auto shadow-none" />
+                  </div>
                 </div>
                 <div>
                   <Label htmlFor="clientEmail" className="text-[10px] font-bold uppercase text-deep-forest/50 block mb-1.5">Client Email *</Label>
-                  <Input id="clientEmail" type="email" required value={clientData.clientEmail} onChange={(e) => updateClientInfo('clientEmail', e.target.value)} className="w-full px-4 py-3 rounded-xl border border-deep-forest/10 text-deep-forest text-sm focus:outline-none focus:border-pathway-green focus:ring-2 focus:ring-pathway-green/20 transition-all bg-linen-white/50 h-auto shadow-none" />
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-deep-forest/30 pointer-events-none" />
+                    <Input id="clientEmail" type="email" placeholder="john@example.com" required value={clientData.clientEmail} onChange={(e) => updateClientInfo('clientEmail', e.target.value)} className="w-full pl-10 pr-4 py-3 rounded-xl border border-deep-forest/10 text-deep-forest text-sm focus:outline-none focus:border-pathway-green focus:ring-2 focus:ring-pathway-green/20 transition-all bg-linen-white/50 h-auto shadow-none" />
+                  </div>
                 </div>
                 <div>
                   <Label htmlFor="propertyAddress" className="text-[10px] font-bold uppercase text-deep-forest/50 block mb-1.5">Property Address *</Label>
-                  <Input id="propertyAddress" required value={clientData.propertyAddress} onChange={(e) => updateClientInfo('propertyAddress', e.target.value)} className="w-full px-4 py-3 rounded-xl border border-deep-forest/10 text-deep-forest text-sm focus:outline-none focus:border-pathway-green focus:ring-2 focus:ring-pathway-green/20 transition-all bg-linen-white/50 h-auto shadow-none" />
+                  <div className="relative">
+                    <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-deep-forest/30 pointer-events-none" />
+                    <Input id="propertyAddress" required placeholder="123 Main St" value={clientData.propertyAddress} onChange={(e) => updateClientInfo('propertyAddress', e.target.value)} className="w-full pl-10 pr-4 py-3 rounded-xl border border-deep-forest/10 text-deep-forest text-sm focus:outline-none focus:border-pathway-green focus:ring-2 focus:ring-pathway-green/20 transition-all bg-linen-white/50 h-auto shadow-none" />
+                  </div>
                 </div>
                 <div>
                   <Label htmlFor="date" className="text-[10px] font-bold uppercase text-deep-forest/50 block mb-1.5">Date *</Label>
-                  <Input id="date" type="date" required value={clientData.date} onChange={(e) => updateClientInfo('date', e.target.value)} className="w-full px-4 py-3 rounded-xl border border-deep-forest/10 text-deep-forest text-sm focus:outline-none focus:border-pathway-green focus:ring-2 focus:ring-pathway-green/20 transition-all bg-linen-white/50 h-auto shadow-none" />
+                  <div className="relative">
+                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-deep-forest/30 pointer-events-none" />
+                    <Input id="date" type="date" required value={clientData.date} onChange={(e) => updateClientInfo('date', e.target.value)} className="w-full pl-10 pr-4 py-3 rounded-xl border border-deep-forest/10 text-deep-forest text-sm focus:outline-none focus:border-pathway-green focus:ring-2 focus:ring-pathway-green/20 transition-all bg-linen-white/50 h-auto shadow-none" />
+                  </div>
                 </div>
                 <button type="submit" className="w-full bg-pathway-green text-white py-4 rounded-xl font-bold text-[15px] hover:brightness-110 transition-all shadow-lg shadow-pathway-green/20 mt-2 flex items-center justify-center gap-2">
                   Begin Inspection <ArrowRight className="w-4 h-4" />
