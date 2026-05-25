@@ -17,6 +17,7 @@ export default function AdminApp() {
   const [profiles, setProfiles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedInspection, setSelectedInspection] = useState<any | null>(null);
+  const [selectedLead, setSelectedLead] = useState<any | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [companySettings, setCompanySettings] = useState<any>(null);
   const [templates, setTemplates] = useState<any[]>([]);
@@ -397,6 +398,65 @@ export default function AdminApp() {
           </div>
         </div>
       )}
+
+      {/* ── Lead Detail Modal ── */}
+      {selectedLead && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-8 animate-in fade-in duration-200">
+          <div className="absolute inset-0 bg-deep-forest/80 backdrop-blur-sm" onClick={() => setSelectedLead(null)} />
+          <div className="relative w-full max-w-2xl bg-linen-white rounded-[2rem] shadow-2xl flex flex-col max-h-full overflow-hidden border border-white/20 animate-in zoom-in-95 duration-300">
+            
+            <div className="flex items-center justify-between p-6 border-b border-deep-forest/10 bg-white">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-amber-porch/20 flex items-center justify-center text-amber-porch">
+                  <MapPin className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-deep-forest leading-none">Lead Details</h2>
+                  <p className="text-xs font-bold text-deep-forest/40 uppercase tracking-wider mt-1">Logged by {selectedLead.rep_name}</p>
+                </div>
+              </div>
+              <button onClick={() => setSelectedLead(null)} className="w-10 h-10 rounded-full bg-deep-forest/5 text-deep-forest/50 hover:text-deep-forest hover:bg-deep-forest/10 flex items-center justify-center transition-all">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto flex-1 flex flex-col gap-6">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="bg-white p-4 rounded-2xl shadow-sm border border-deep-forest/5">
+                  <span className="text-[10px] uppercase font-bold text-deep-forest/50 tracking-wider">Contact</span>
+                  <p className="font-bold text-deep-forest text-sm mt-1">{selectedLead.contact_name || 'N/A'}</p>
+                </div>
+                <div className="bg-white p-4 rounded-2xl shadow-sm border border-deep-forest/5 col-span-2 md:col-span-1">
+                  <span className="text-[10px] uppercase font-bold text-deep-forest/50 tracking-wider">Address</span>
+                  <p className="font-bold text-deep-forest text-sm mt-1 truncate" title={selectedLead.address}>{selectedLead.address}</p>
+                </div>
+                <div className="bg-white p-4 rounded-2xl shadow-sm border border-deep-forest/5">
+                  <span className="text-[10px] uppercase font-bold text-deep-forest/50 tracking-wider">Status</span>
+                  <p className="font-bold text-deep-forest text-sm mt-1 capitalize">{selectedLead.status.replace('_', ' ')}</p>
+                </div>
+                <div className="bg-white p-4 rounded-2xl shadow-sm border border-deep-forest/5">
+                  <span className="text-[10px] uppercase font-bold text-deep-forest/50 tracking-wider">Date</span>
+                  <p className="font-bold text-deep-forest text-sm mt-1">{new Date(selectedLead.created_at).toLocaleDateString()}</p>
+                </div>
+              </div>
+
+              {selectedLead.notes && (
+                <div className="bg-white p-4 rounded-2xl shadow-sm border border-deep-forest/5">
+                  <span className="text-[10px] uppercase font-bold text-deep-forest/50 tracking-wider mb-2 block">Rep Notes</span>
+                  <p className="text-sm font-medium text-deep-forest/80 leading-relaxed">{selectedLead.notes}</p>
+                </div>
+              )}
+
+              {(selectedLead.lat && selectedLead.lng) && (
+                <div className="bg-white p-4 rounded-2xl shadow-sm border border-deep-forest/5">
+                  <span className="text-[10px] uppercase font-bold text-deep-forest/50 tracking-wider mb-2 block">Coordinates</span>
+                  <p className="text-sm font-medium text-deep-forest/80">Lat: {selectedLead.lat}, Lng: {selectedLead.lng}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 
@@ -484,6 +544,9 @@ export default function AdminApp() {
                     </span>
                   )}
                 </div>
+                <Button variant="ghost" onClick={() => setSelectedLead(lead)} className="text-xs font-bold text-deep-forest hover:bg-deep-forest/5 h-8">
+                  View Details
+                </Button>
                 <button onClick={() => deleteLead(lead.id)} className="w-8 h-8 rounded-lg hover:bg-red-50 text-deep-forest/20 hover:text-red-500 flex items-center justify-center transition-colors" title="Delete">
                   <X className="w-4 h-4" />
                 </button>
