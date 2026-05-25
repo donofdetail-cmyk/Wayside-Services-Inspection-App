@@ -1,5 +1,6 @@
 -- ==============================================================================
--- WAYSIDE MASTER DATABASE SCHEMA (ALL PHASES + ROUTE OPTIMIZATION)
+-- WAYSIDE MASTER DATABASE SCHEMA (GOD-MODE + CRM + ROUTE OPTIMIZATION)
+-- Run this entire script in your Supabase SQL Editor
 -- ==============================================================================
 
 -- 0) UUID helper
@@ -11,17 +12,17 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE TABLE IF NOT EXISTS public.profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id),
   full_name TEXT NOT NULL,
-  role TEXT NOT NULL CHECK (role IN ('technician', 'rep', 'admin')),
+  role TEXT NOT NULL CHECK (role IN ('technician', 'rep', 'admin', 'owner')),
   is_active BOOLEAN DEFAULT true,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- ==============================================================================
 -- 2) Auto-Profile Trigger for New Signups
--- (Single definition: safe defaults + idempotent trigger)
+-- (Bulletproof logic to prevent transaction rollbacks)
 -- ==============================================================================
 CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS trigger AS $
+RETURNS trigger AS $$
 BEGIN
   BEGIN
     INSERT INTO public.profiles (id, full_name, role)
@@ -34,10 +35,9 @@ BEGIN
   EXCEPTION WHEN OTHERS THEN
     RAISE WARNING 'Failed to create profile for new user %: %', new.id, SQLERRM;
   END;
-
   RETURN new;
 END;
-$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 
@@ -129,6 +129,7 @@ CREATE TABLE IF NOT EXISTS public.territory_zones (
   name TEXT NOT NULL,
   color TEXT DEFAULT '#1D3B34',
   is_active BOOLEAN DEFAULT true,
+  deleted_at TIMESTAMPTZ DEFAULT NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -140,6 +141,7 @@ CREATE TABLE IF NOT EXISTS public.customers (
   full_name TEXT NOT NULL,
   email TEXT,
   phone TEXT,
+  deleted_at TIMESTAMPTZ DEFAULT NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -152,6 +154,7 @@ CREATE TABLE IF NOT EXISTS public.properties (
   lat DOUBLE PRECISION,
   lng DOUBLE PRECISION,
   territory_zone_id UUID REFERENCES public.territory_zones(id) ON DELETE SET NULL,
+  deleted_at TIMESTAMPTZ DEFAULT NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -166,6 +169,7 @@ CREATE TABLE IF NOT EXISTS public.service_agreements (
   recurring_price DECIMAL(10, 2) NOT NULL,
   frequency TEXT NOT NULL,
   status TEXT DEFAULT 'active' CHECK (status IN ('active', 'paused', 'cancelled')),
+  deleted_at TIMESTAMPTZ DEFAULT NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -181,176 +185,9 @@ CREATE TABLE IF NOT EXISTS public.service_tickets (
   type TEXT DEFAULT 'recurring' CHECK (type IN ('initial', 'recurring', 'reservice')),
   status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'skipped', 'cancelled')),
   completed_at TIMESTAMP WITH TIME ZONE,
+  deleted_at TIMESTAMPTZ DEFAULT NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
-
--- ==============================================================================
--- RLS POLICIES (enable + replace)
--- ==============================================================================
-ALTER TABLE public.territory_zones ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.customers ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.properties ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.service_agreements ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.service_tickets ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "Enable all for authenticated users" ON public.territory_zones;
-CREATE POLICY "Enable all for authenticated users"
-ON public.territory_zones
-FOR ALL
-TO authenticated
-USING (true)
-WITH CHECK (true);
-
-DROP POLICY IF EXISTS "Enable all for authenticated users" ON public.customers;
-CREATE POLICY "Enable all for authenticated users"
-ON public.customers
-FOR ALL
-TO authenticated
-USING (true)
-WITH CHECK (true);
-
-DROP POLICY IF EXISTS "Enable all for authenticated users" ON public.properties;
-CREATE POLICY "Enable all for authenticated users"
-ON public.properties
-FOR ALL
-TO authenticated
-USING (true)
-WITH CHECK (true);
-
-DROP POLICY IF EXISTS "Enable all for authenticated users" ON public.service_agreements;
-CREATE POLICY "Enable all for authenticated users"
-ON public.service_agreements
-FOR ALL
-TO authenticated
-USING (true)
-WITH CHECK (true);
-
-DROP POLICY IF EXISTS "Enable all for authenticated users" ON public.service_tickets;
-CREATE POLICY "Enable all for authenticated users"
-ON public.service_tickets
-FOR ALL
-TO authenticated
-USING (true)
-WITH CHECK (true);
-
--- ==============================================================================
--- Realtime Enablement (idempotent)
--- ==============================================================================
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1
-    FROM pg_publication_tables
-    WHERE pubname = 'supabase_realtime'
-      AND schemaname = 'public'
-      AND tablename = 'd2d_leads'
-  ) THEN
-    EXECUTE 'ALTER PUBLICATION supabase_realtime ADD TABLE public.d2d_leads';
-  END IF;
-
-  IF NOT EXISTS (
-    SELECT 1
-    FROM pg_publication_tables
-    WHERE pubname = 'supabase_realtime'
-      AND schemaname = 'public'
-      AND tablename = 'inspections'
-  ) THEN
-    EXECUTE 'ALTER PUBLICATION supabase_realtime ADD TABLE public.inspections';
-  END IF;
-END $$;
-
--- ==============================================================================
--- Storage Bucket Setup (for PDFs) (idempotent)
--- ==============================================================================
-INSERT INTO storage.buckets (id, name, public)
-VALUES ('reports', 'reports', true)
-ON CONFLICT (id) DO NOTHING;
-
--- ==============================================================================
--- WAYSIDE APP - TIME TRACKING SCHEMA
--- ==============================================================================
-CREATE TABLE IF NOT EXISTS public.time_entries (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-  clock_in_time TIMESTAMPTZ NOT NULL DEFAULT now(),
-  clock_out_time TIMESTAMPTZ,
-  duration_minutes INT,
-  location_in TEXT,
-  location_out TEXT,
-  status TEXT NOT NULL CHECK (status IN ('clocked_in', 'clocked_out')),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-ALTER TABLE public.time_entries ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "Users can insert their own time entries" ON public.time_entries;
-CREATE POLICY "Users can insert their own time entries"
-ON public.time_entries
-FOR INSERT
-WITH CHECK (auth.uid() = user_id);
-
-DROP POLICY IF EXISTS "Users can view their own time entries" ON public.time_entries;
-CREATE POLICY "Users can view their own time entries"
-ON public.time_entries
-FOR SELECT
-USING (
-  auth.uid() = user_id
-  OR EXISTS (
-    SELECT 1
-    FROM public.profiles p
-    WHERE p.id = auth.uid()
-      AND p.role = 'admin'
-  )
-);
-
-DROP POLICY IF EXISTS "Users can update their own time entries" ON public.time_entries;
-CREATE POLICY "Users can update their own time entries"
-ON public.time_entries
-FOR UPDATE
-USING (
-  auth.uid() = user_id
-  OR EXISTS (
-    SELECT 1
-    FROM public.profiles p
-    WHERE p.id = auth.uid()
-      AND p.role = 'admin'
-  )
-);
-
-DROP POLICY IF EXISTS "Admins can delete time entries" ON public.time_entries;
-CREATE POLICY "Admins can delete time entries"
-ON public.time_entries
-FOR DELETE
-USING (
-  EXISTS (
-    SELECT 1
-    FROM public.profiles p
-    WHERE p.id = auth.uid()
-      AND p.role = 'admin'
-  )
-);
-
--- Realtime: add time_entries idempotently
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1
-    FROM pg_publication_tables
-    WHERE pubname = 'supabase_realtime'
-      AND schemaname = 'public'
-      AND tablename = 'time_entries'
-  ) THEN
-    EXECUTE 'ALTER PUBLICATION supabase_realtime ADD TABLE public.time_entries';
-  END IF;
-END $$;
-
-DROP POLICY IF EXISTS "Enable all for authenticated users" ON public.profiles;
-CREATE POLICY "Enable all for authenticated users"
-ON public.profiles
-FOR ALL
-TO authenticated
-USING (true)
-WITH CHECK (true);
 
 -- ==============================================================================
 -- 12) CRM Tables (Notes, Touchpoints, Logs)
@@ -360,6 +197,7 @@ CREATE TABLE IF NOT EXISTS public.client_notes (
   property_address TEXT NOT NULL,
   content TEXT NOT NULL,
   author_name TEXT NOT NULL,
+  deleted_at TIMESTAMPTZ DEFAULT NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -382,42 +220,24 @@ CREATE TABLE IF NOT EXISTS public.communication_logs (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-ALTER TABLE public.client_notes ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.client_touchpoints ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.communication_logs ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "Enable all for authenticated users" ON public.client_notes;
-CREATE POLICY "Enable all for authenticated users" ON public.client_notes FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "Enable all for authenticated users" ON public.client_touchpoints;
-CREATE POLICY "Enable all for authenticated users" ON public.client_touchpoints FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "Enable all for authenticated users" ON public.communication_logs;
-CREATE POLICY "Enable all for authenticated users" ON public.communication_logs FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'client_notes') THEN
-    EXECUTE 'ALTER PUBLICATION supabase_realtime ADD TABLE public.client_notes';
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'client_touchpoints') THEN
-    EXECUTE 'ALTER PUBLICATION supabase_realtime ADD TABLE public.client_touchpoints';
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'communication_logs') THEN
-    EXECUTE 'ALTER PUBLICATION supabase_realtime ADD TABLE public.communication_logs';
-  END IF;
-END $$;
 -- ==============================================================================
--- PHASE 1: GOD MODE ARCHITECTURE
--- Run this in the Supabase SQL Editor
+-- 13) Time Tracking Schema
 -- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.time_entries (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  clock_in_time TIMESTAMPTZ NOT NULL DEFAULT now(),
+  clock_out_time TIMESTAMPTZ,
+  duration_minutes INT,
+  location_in TEXT,
+  location_out TEXT,
+  status TEXT NOT NULL CHECK (status IN ('clocked_in', 'clocked_out')),
+  deleted_at TIMESTAMPTZ DEFAULT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 
--- 1) UPDATE PROFILES TO SUPPORT 'owner' ROLE
 -- ==============================================================================
-ALTER TABLE public.profiles DROP CONSTRAINT IF EXISTS profiles_role_check;
-ALTER TABLE public.profiles ADD CONSTRAINT profiles_role_check CHECK (role IN ('technician', 'rep', 'admin', 'owner'));
-
--- 2) UNIVERSAL AUDIT LOGGER
+-- 14) Universal Audit Logger (GOD MODE)
 -- ==============================================================================
 CREATE TABLE IF NOT EXISTS public.audit_logs (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -430,20 +250,6 @@ CREATE TABLE IF NOT EXISTS public.audit_logs (
   timestamp TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Enable RLS on audit_logs (Only owners/admins can view)
-ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Admins can view audit logs" ON public.audit_logs;
-CREATE POLICY "Admins can view audit logs"
-ON public.audit_logs
-FOR SELECT TO authenticated
-USING (
-  EXISTS (
-    SELECT 1 FROM public.profiles 
-    WHERE profiles.id = auth.uid() AND role IN ('admin', 'owner')
-  )
-);
-
--- Trigger Function
 CREATE OR REPLACE FUNCTION public.audit_trigger_func()
 RETURNS trigger AS $$
 DECLARE
@@ -460,7 +266,6 @@ BEGIN
     v_new_data := row_to_json(NEW)::JSONB;
     
     -- Distinguish SOFT_DELETE vs RESTORE vs UPDATE
-    -- Check if deleted_at column exists in the row before trying to access it dynamically
     IF (v_old_data ? 'deleted_at' AND v_new_data ? 'deleted_at') THEN
         IF (v_old_data->>'deleted_at' IS NULL AND v_new_data->>'deleted_at' IS NOT NULL) THEN
             INSERT INTO public.audit_logs (table_name, record_id, action, old_data, new_data, changed_by)
@@ -487,25 +292,11 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
-
--- 3) SOFT DELETE ARCHITECTURE
--- ==============================================================================
-ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ DEFAULT NULL;
-ALTER TABLE public.properties ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ DEFAULT NULL;
-ALTER TABLE public.service_tickets ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ DEFAULT NULL;
-ALTER TABLE public.service_agreements ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ DEFAULT NULL;
-ALTER TABLE public.time_entries ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ DEFAULT NULL;
-ALTER TABLE public.client_notes ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ DEFAULT NULL;
-ALTER TABLE public.territory_zones ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ DEFAULT NULL;
-
--- 4) APPLY TRIGGERS
--- ==============================================================================
+-- Attach Triggers to Core Tables
 DO $$
-DECLARE
-    t text;
+DECLARE t text;
 BEGIN
-    FOR t IN 
-        SELECT unnest(ARRAY['customers', 'properties', 'service_tickets', 'service_agreements', 'time_entries', 'client_notes', 'territory_zones', 'profiles'])
+    FOR t IN SELECT unnest(ARRAY['customers', 'properties', 'service_tickets', 'service_agreements', 'time_entries', 'client_notes', 'territory_zones', 'profiles'])
     LOOP
         EXECUTE format('DROP TRIGGER IF EXISTS audit_trigger ON public.%I', t);
         EXECUTE format('CREATE TRIGGER audit_trigger AFTER INSERT OR UPDATE OR DELETE ON public.%I FOR EACH ROW EXECUTE FUNCTION public.audit_trigger_func()', t);
@@ -514,31 +305,69 @@ END;
 $$;
 
 
--- 5) GOD MODE RLS FOR TIME ENTRIES (OVERRIDING THE RESTRICTIONS)
 -- ==============================================================================
--- We explicitly grant admins/owners full control over time entries (Insert, Update, Delete)
-DROP POLICY IF EXISTS "Users can insert their own time entries" ON public.time_entries;
-CREATE POLICY "Users can insert their own time entries OR Admin override"
-ON public.time_entries FOR INSERT WITH CHECK (
+-- RLS POLICIES (God-Mode + Public Enablement)
+-- ==============================================================================
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.territory_zones ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.customers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.properties ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.service_agreements ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.service_tickets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.client_notes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.client_touchpoints ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.communication_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.time_entries ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
+
+-- Base Tables (Accessible by all authenticated users, filtered by soft-deletes in UI)
+DO $$
+DECLARE t text;
+BEGIN
+    FOR t IN SELECT unnest(ARRAY['profiles', 'territory_zones', 'customers', 'properties', 'service_agreements', 'service_tickets', 'client_notes', 'client_touchpoints', 'communication_logs'])
+    LOOP
+        EXECUTE format('DROP POLICY IF EXISTS "Enable all for authenticated users" ON public.%I', t);
+        EXECUTE format('CREATE POLICY "Enable all for authenticated users" ON public.%I FOR ALL TO authenticated USING (true) WITH CHECK (true)', t);
+    END LOOP;
+END;
+$$;
+
+-- Restricted Tables: Audit Logs (Admins/Owners Only)
+DROP POLICY IF EXISTS "Admins can view audit logs" ON public.audit_logs;
+CREATE POLICY "Admins can view audit logs" ON public.audit_logs FOR SELECT TO authenticated USING (
+  EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND role IN ('admin', 'owner'))
+);
+
+-- Restricted Tables: Time Entries (Own records OR Admin/Owner Override)
+DROP POLICY IF EXISTS "Users can insert their own time entries OR Admin override" ON public.time_entries;
+CREATE POLICY "Users can insert their own time entries OR Admin override" ON public.time_entries FOR INSERT WITH CHECK (
   auth.uid() = user_id OR EXISTS (SELECT 1 FROM public.profiles p WHERE p.id = auth.uid() AND p.role IN ('admin', 'owner'))
 );
 
-DROP POLICY IF EXISTS "Users can update their own time entries" ON public.time_entries;
-CREATE POLICY "Users can update their own time entries OR Admin override"
-ON public.time_entries FOR UPDATE USING (
+DROP POLICY IF EXISTS "Users can update their own time entries OR Admin override" ON public.time_entries;
+CREATE POLICY "Users can update their own time entries OR Admin override" ON public.time_entries FOR UPDATE USING (
   auth.uid() = user_id OR EXISTS (SELECT 1 FROM public.profiles p WHERE p.id = auth.uid() AND p.role IN ('admin', 'owner'))
 );
 
 DROP POLICY IF EXISTS "Admins can delete time entries" ON public.time_entries;
-CREATE POLICY "Admins can delete time entries"
-ON public.time_entries FOR DELETE USING (
+CREATE POLICY "Admins can delete time entries" ON public.time_entries FOR DELETE USING (
   EXISTS (SELECT 1 FROM public.profiles p WHERE p.id = auth.uid() AND p.role IN ('admin', 'owner'))
 );
 
--- Realtime for audit_logs
+-- ==============================================================================
+-- REALTIME SUBSCRIPTIONS
+-- ==============================================================================
 DO $$
+DECLARE t text;
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'audit_logs') THEN
-    EXECUTE 'ALTER PUBLICATION supabase_realtime ADD TABLE public.audit_logs';
-  END IF;
-END $$;
+    FOR t IN SELECT unnest(ARRAY['d2d_leads', 'inspections', 'time_entries', 'client_notes', 'client_touchpoints', 'communication_logs', 'audit_logs'])
+    LOOP
+        IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = t) THEN
+            EXECUTE format('ALTER PUBLICATION supabase_realtime ADD TABLE public.%I', t);
+        END IF;
+    END LOOP;
+END;
+$$;
+
+-- Storage Bucket Setup (for PDFs)
+INSERT INTO storage.buckets (id, name, public) VALUES ('reports', 'reports', true) ON CONFLICT (id) DO NOTHING;
