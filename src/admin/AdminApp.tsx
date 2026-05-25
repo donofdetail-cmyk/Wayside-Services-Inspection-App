@@ -1159,20 +1159,31 @@ export default function AdminApp() {
       </aside>
 
       {/* Mobile Header */}
-      <header className="md:hidden sticky top-0 z-20 bg-deep-forest text-white shadow-lg border-b border-white/10 p-4 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <svg viewBox="0 0 48 48" className="w-6 h-6 shrink-0" fill="none">
-            <path d="M8 22L24 8L40 22V40C40 41.1 39.1 42 38 42H10C8.9 42 8 41.1 8 40V22Z" fill="#1D9E75"/>
-            <path d="M4 24L24 6L44 24" stroke="#1D9E75" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
-            <rect x="20" y="30" width="8" height="12" rx="1" fill="#16795A"/>
-            <circle cx="34" cy="14" r="8" fill="#1D9E75" stroke="white" strokeWidth="2.5"/>
-            <path d="M30.5 14L33 16.5L37.5 11.5" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-          <span className="font-bold text-lg">Admin</span>
+      <header className="md:hidden h-20 bg-deep-forest text-linen-white flex items-center px-4 shadow-md sticky top-0 z-10 w-full shrink-0">
+        <div className="w-full flex items-center justify-between">
+          {/* Logo */}
+          <div className="flex items-center gap-2.5">
+            <svg viewBox="0 0 48 48" className="w-9 h-9" fill="none">
+              <path d="M8 22L24 8L40 22V40C40 41.1 39.1 42 38 42H10C8.9 42 8 41.1 8 40V22Z" fill="#1D9E75"/>
+              <path d="M4 24L24 6L44 24" stroke="#1D9E75" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+              <rect x="20" y="30" width="8" height="12" rx="1" fill="#16795A"/>
+              <circle cx="34" cy="14" r="8" fill="#1D9E75" stroke="white" strokeWidth="2.5"/>
+              <path d="M30.5 14L33 16.5L37.5 11.5" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+            <div className="flex flex-col leading-none">
+              <span className="font-bold text-xl text-white tracking-tight">Wayside</span>
+              <span className="font-bold text-[9px] text-amber-porch tracking-[0.25em] uppercase">Admin Hub</span>
+            </div>
+          </div>
+          
+          <button
+            onClick={() => setMenuOpen(true)}
+            className="relative flex items-center justify-center w-10 h-10 rounded-xl bg-white/10 hover:bg-white/20 transition-all text-white"
+            aria-label="Open menu"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
         </div>
-        <button onClick={handleLogout} className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 text-white">
-          <LogOut className="w-4 h-4" />
-        </button>
       </header>
 
       <main className="flex-1 p-4 md:p-8 max-w-5xl mx-auto w-full">
