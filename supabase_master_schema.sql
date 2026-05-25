@@ -343,3 +343,11 @@ BEGIN
     EXECUTE 'ALTER PUBLICATION supabase_realtime ADD TABLE public.time_entries';
   END IF;
 END $$;
+
+DROP POLICY IF EXISTS "Enable all for authenticated users" ON public.profiles;
+CREATE POLICY "Enable all for authenticated users"
+ON public.profiles
+FOR ALL
+TO authenticated
+USING (true)
+WITH CHECK (true);
