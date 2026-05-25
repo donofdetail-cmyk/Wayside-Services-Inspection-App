@@ -351,3 +351,59 @@ FOR ALL
 TO authenticated
 USING (true)
 WITH CHECK (true);
+
+-- ==============================================================================
+-- 12) CRM Tables (Notes, Touchpoints, Logs)
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.client_notes (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  property_address TEXT NOT NULL,
+  content TEXT NOT NULL,
+  author_name TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.client_touchpoints (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  client_id UUID REFERENCES public.customers(id) ON DELETE CASCADE,
+  type TEXT NOT NULL,
+  status TEXT DEFAULT 'pending',
+  scheduled_for TIMESTAMP WITH TIME ZONE,
+  notes TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.communication_logs (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  client_id UUID REFERENCES public.customers(id) ON DELETE CASCADE,
+  type TEXT NOT NULL,
+  content TEXT NOT NULL,
+  status TEXT DEFAULT 'sent',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+ALTER TABLE public.client_notes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.client_touchpoints ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.communication_logs ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Enable all for authenticated users" ON public.client_notes;
+CREATE POLICY "Enable all for authenticated users" ON public.client_notes FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Enable all for authenticated users" ON public.client_touchpoints;
+CREATE POLICY "Enable all for authenticated users" ON public.client_touchpoints FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Enable all for authenticated users" ON public.communication_logs;
+CREATE POLICY "Enable all for authenticated users" ON public.communication_logs FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'client_notes') THEN
+    EXECUTE 'ALTER PUBLICATION supabase_realtime ADD TABLE public.client_notes';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'client_touchpoints') THEN
+    EXECUTE 'ALTER PUBLICATION supabase_realtime ADD TABLE public.client_touchpoints';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'communication_logs') THEN
+    EXECUTE 'ALTER PUBLICATION supabase_realtime ADD TABLE public.communication_logs';
+  END IF;
+END $$;
