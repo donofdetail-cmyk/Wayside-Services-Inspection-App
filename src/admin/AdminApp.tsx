@@ -568,111 +568,6 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
         </div>
       )}
 
-      {/* ── Lead Detail Modal ── */}
-      {selectedLead && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-8 animate-in fade-in duration-200">
-          <div className="absolute inset-0 bg-deep-forest/80 backdrop-blur-sm" onClick={() => setSelectedLead(null)} />
-          <div className="relative w-full max-w-2xl bg-linen-white rounded-[2rem] shadow-2xl flex flex-col max-h-full overflow-hidden border border-white/20 animate-in zoom-in-95 duration-300">
-            
-            <div className="flex items-center justify-between p-6 border-b border-deep-forest/10 bg-white">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-amber-porch/20 flex items-center justify-center text-amber-porch">
-                  <MapPin className="w-5 h-5" />
-                </div>
-                <div>
-                  <h2 className="text-xl font-bold text-deep-forest leading-none">Lead Details</h2>
-                  <p className="text-xs font-bold text-deep-forest/40 uppercase tracking-wider mt-1">Logged by {selectedLead.rep_name}</p>
-                </div>
-              </div>
-              <button onClick={() => setSelectedLead(null)} className="w-10 h-10 rounded-full bg-deep-forest/5 text-deep-forest/50 hover:text-deep-forest hover:bg-deep-forest/10 flex items-center justify-center transition-all">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="p-6 overflow-y-auto flex-1 flex flex-col gap-6">
-                {/* Pipeline Status Bar */}
-                <div className="col-span-2 md:col-span-4 bg-white p-4 rounded-2xl shadow-sm border border-deep-forest/5">
-                  <span className="text-[10px] uppercase font-bold text-deep-forest/50 tracking-wider mb-3 block">Pipeline Stage</span>
-                  <div className="flex items-center gap-1">
-                    {[
-                      { id: 'new', label: 'New' },
-                      { id: 'not_home', label: 'Not Home' },
-                      { id: 'interested', label: 'Interested' },
-                      { id: 'scheduled', label: 'Scheduled' },
-                    ].map((stage, idx, arr) => {
-                      const isActive = selectedLead.status === stage.id;
-                      const isPast = arr.findIndex(s => s.id === selectedLead.status) > idx;
-                      return (
-                        <div key={stage.id} className="flex items-center flex-1">
-                          <button
-                            onClick={async () => {
-                              if (stage.id === selectedLead.status) return;
-                              const { error } = await supabase.from('d2d_leads').update({ status: stage.id }).eq('id', selectedLead.id);
-                              if (!error) {
-                                setLeads(prev => prev.map(l => l.id === selectedLead.id ? { ...l, status: stage.id } : l));
-                                setSelectedLead((prev: any) => ({ ...prev, status: stage.id }));
-                                toast.success(`Moved to ${stage.label}`);
-                              }
-                            }}
-                            className={`flex-1 text-center py-1.5 px-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${
-                              isActive ? 'bg-pathway-green text-white shadow-sm' :
-                              isPast ? 'bg-deep-forest/10 text-deep-forest/50' :
-                              'bg-deep-forest/5 text-deep-forest/30 hover:bg-deep-forest/10 hover:text-deep-forest/60'
-                            }`}
-                          >
-                            {stage.label}
-                          </button>
-                          {idx < arr.length - 1 && <div className={`w-3 h-0.5 shrink-0 ${isPast || isActive ? 'bg-pathway-green' : 'bg-deep-forest/10'}`} />}
-                        </div>
-                      );
-                    })}
-                  </div>
-                  {selectedLead.status === 'interested' && (
-                    <button
-                      onClick={() => { setScheduleModal(selectedLead); setSelectedLead(null); setScheduleForm({ start: '', end: '', techId: '', zoneId: '', price: '', frequency: 'bi-monthly' }); }}
-                      className="mt-3 w-full py-2 bg-pathway-green text-white rounded-xl text-xs font-bold hover:brightness-110 transition-all flex items-center justify-center gap-2"
-                    >
-                      <CalendarIcon className="w-3.5 h-3.5" /> Schedule This Job
-                    </button>
-                  )}
-                </div>
-
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="bg-white p-4 rounded-2xl shadow-sm border border-deep-forest/5">
-                  <span className="text-[10px] uppercase font-bold text-deep-forest/50 tracking-wider">Contact</span>
-                  <p className="font-bold text-deep-forest text-sm mt-1">{selectedLead.contact_name || 'N/A'}</p>
-                </div>
-                <div className="bg-white p-4 rounded-2xl shadow-sm border border-deep-forest/5 col-span-2 md:col-span-1">
-                  <span className="text-[10px] uppercase font-bold text-deep-forest/50 tracking-wider">Address</span>
-                  <p className="font-bold text-deep-forest text-sm mt-1 truncate" title={selectedLead.address}>{selectedLead.address}</p>
-                </div>
-                <div className="bg-white p-4 rounded-2xl shadow-sm border border-deep-forest/5">
-                  <span className="text-[10px] uppercase font-bold text-deep-forest/50 tracking-wider">Status</span>
-                  <p className="font-bold text-deep-forest text-sm mt-1 capitalize">{selectedLead.status ? selectedLead.status.replace('_', ' ') : 'Unknown'}</p>
-                </div>
-                <div className="bg-white p-4 rounded-2xl shadow-sm border border-deep-forest/5">
-                  <span className="text-[10px] uppercase font-bold text-deep-forest/50 tracking-wider">Date</span>
-                  <p className="font-bold text-deep-forest text-sm mt-1">{new Date(selectedLead.created_at).toLocaleDateString()}</p>
-                </div>
-              </div>
-
-              {selectedLead.notes && (
-                <div className="bg-white p-4 rounded-2xl shadow-sm border border-deep-forest/5">
-                  <span className="text-[10px] uppercase font-bold text-deep-forest/50 tracking-wider mb-2 block">Rep Notes</span>
-                  <p className="text-sm font-medium text-deep-forest/80 leading-relaxed">{selectedLead.notes}</p>
-                </div>
-              )}
-
-              {(selectedLead.lat && selectedLead.lng) && (
-                <div className="bg-white p-4 rounded-2xl shadow-sm border border-deep-forest/5">
-                  <span className="text-[10px] uppercase font-bold text-deep-forest/50 tracking-wider mb-2 block">Coordinates</span>
-                  <p className="text-sm font-medium text-deep-forest/80">Lat: {selectedLead.lat}, Lng: {selectedLead.lng}</p>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 
@@ -2258,6 +2153,111 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
               <Button className="flex-1 bg-pathway-green text-white hover:brightness-110" onClick={() => handleScheduleLead(scheduleModal)}>
                 Confirm Schedule
               </Button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ── Lead Detail Modal ── */}
+      {selectedLead && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-8 animate-in fade-in duration-200">
+          <div className="absolute inset-0 bg-deep-forest/80 backdrop-blur-sm" onClick={() => setSelectedLead(null)} />
+          <div className="relative w-full max-w-2xl bg-linen-white rounded-[2rem] shadow-2xl flex flex-col max-h-full overflow-hidden border border-white/20 animate-in zoom-in-95 duration-300">
+            
+            <div className="flex items-center justify-between p-6 border-b border-deep-forest/10 bg-white">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-amber-porch/20 flex items-center justify-center text-amber-porch">
+                  <MapPin className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-deep-forest leading-none">Lead Details</h2>
+                  <p className="text-xs font-bold text-deep-forest/40 uppercase tracking-wider mt-1">Logged by {selectedLead.rep_name}</p>
+                </div>
+              </div>
+              <button onClick={() => setSelectedLead(null)} className="w-10 h-10 rounded-full bg-deep-forest/5 text-deep-forest/50 hover:text-deep-forest hover:bg-deep-forest/10 flex items-center justify-center transition-all">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto flex-1 flex flex-col gap-6">
+                {/* Pipeline Status Bar */}
+                <div className="col-span-2 md:col-span-4 bg-white p-4 rounded-2xl shadow-sm border border-deep-forest/5">
+                  <span className="text-[10px] uppercase font-bold text-deep-forest/50 tracking-wider mb-3 block">Pipeline Stage</span>
+                  <div className="flex items-center gap-1">
+                    {[
+                      { id: 'new', label: 'New' },
+                      { id: 'not_home', label: 'Not Home' },
+                      { id: 'interested', label: 'Interested' },
+                      { id: 'scheduled', label: 'Scheduled' },
+                    ].map((stage, idx, arr) => {
+                      const isActive = selectedLead.status === stage.id;
+                      const isPast = arr.findIndex(s => s.id === selectedLead.status) > idx;
+                      return (
+                        <div key={stage.id} className="flex items-center flex-1">
+                          <button
+                            onClick={async () => {
+                              if (stage.id === selectedLead.status) return;
+                              const { error } = await supabase.from('d2d_leads').update({ status: stage.id }).eq('id', selectedLead.id);
+                              if (!error) {
+                                setLeads(prev => prev.map(l => l.id === selectedLead.id ? { ...l, status: stage.id } : l));
+                                setSelectedLead((prev: any) => ({ ...prev, status: stage.id }));
+                                toast.success(`Moved to ${stage.label}`);
+                              }
+                            }}
+                            className={`flex-1 text-center py-1.5 px-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${
+                              isActive ? 'bg-pathway-green text-white shadow-sm' :
+                              isPast ? 'bg-deep-forest/10 text-deep-forest/50' :
+                              'bg-deep-forest/5 text-deep-forest/30 hover:bg-deep-forest/10 hover:text-deep-forest/60'
+                            }`}
+                          >
+                            {stage.label}
+                          </button>
+                          {idx < arr.length - 1 && <div className={`w-3 h-0.5 shrink-0 ${isPast || isActive ? 'bg-pathway-green' : 'bg-deep-forest/10'}`} />}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {selectedLead.status === 'interested' && (
+                    <button
+                      onClick={() => { setScheduleModal(selectedLead); setSelectedLead(null); setScheduleForm({ start: '', end: '', techId: '', zoneId: '', price: '', frequency: 'bi-monthly' }); }}
+                      className="mt-3 w-full py-2 bg-pathway-green text-white rounded-xl text-xs font-bold hover:brightness-110 transition-all flex items-center justify-center gap-2"
+                    >
+                      <CalendarIcon className="w-3.5 h-3.5" /> Schedule This Job
+                    </button>
+                  )}
+                </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="bg-white p-4 rounded-2xl shadow-sm border border-deep-forest/5">
+                  <span className="text-[10px] uppercase font-bold text-deep-forest/50 tracking-wider">Contact</span>
+                  <p className="font-bold text-deep-forest text-sm mt-1">{selectedLead.contact_name || 'N/A'}</p>
+                </div>
+                <div className="bg-white p-4 rounded-2xl shadow-sm border border-deep-forest/5 col-span-2 md:col-span-1">
+                  <span className="text-[10px] uppercase font-bold text-deep-forest/50 tracking-wider">Address</span>
+                  <p className="font-bold text-deep-forest text-sm mt-1 truncate" title={selectedLead.address}>{selectedLead.address}</p>
+                </div>
+                <div className="bg-white p-4 rounded-2xl shadow-sm border border-deep-forest/5">
+                  <span className="text-[10px] uppercase font-bold text-deep-forest/50 tracking-wider">Status</span>
+                  <p className="font-bold text-deep-forest text-sm mt-1 capitalize">{selectedLead.status ? selectedLead.status.replace('_', ' ') : 'Unknown'}</p>
+                </div>
+                <div className="bg-white p-4 rounded-2xl shadow-sm border border-deep-forest/5">
+                  <span className="text-[10px] uppercase font-bold text-deep-forest/50 tracking-wider">Date</span>
+                  <p className="font-bold text-deep-forest text-sm mt-1">{new Date(selectedLead.created_at).toLocaleDateString()}</p>
+                </div>
+              </div>
+
+              {selectedLead.notes && (
+                <div className="bg-white p-4 rounded-2xl shadow-sm border border-deep-forest/5">
+                  <span className="text-[10px] uppercase font-bold text-deep-forest/50 tracking-wider mb-2 block">Rep Notes</span>
+                  <p className="text-sm font-medium text-deep-forest/80 leading-relaxed">{selectedLead.notes}</p>
+                </div>
+              )}
+
+              {(selectedLead.lat && selectedLead.lng) && (
+                <div className="bg-white p-4 rounded-2xl shadow-sm border border-deep-forest/5">
+                  <span className="text-[10px] uppercase font-bold text-deep-forest/50 tracking-wider mb-2 block">Coordinates</span>
+                  <p className="text-sm font-medium text-deep-forest/80">Lat: {selectedLead.lat}, Lng: {selectedLead.lng}</p>
+                </div>
+              )}
             </div>
           </div>
         </div>
