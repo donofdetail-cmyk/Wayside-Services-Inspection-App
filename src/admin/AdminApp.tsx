@@ -169,10 +169,16 @@ export default function AdminApp() {
       <aside className="hidden md:flex flex-col fixed top-0 left-0 h-full w-64 bg-deep-forest border-r border-white/10 z-30 shadow-2xl">
         <div className="p-6 border-b border-white/10">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-pathway-green flex items-center justify-center text-white font-bold shrink-0 shadow-[0_0_15px_rgba(29,158,117,0.5)]">
-              W
+            <svg viewBox="0 0 48 48" className="w-8 h-8 shrink-0 drop-shadow-[0_0_10px_rgba(29,158,117,0.3)]" fill="none">
+              <path d="M8 22L24 8L40 22V40C40 41.1 39.1 42 38 42H10C8.9 42 8 41.1 8 40V22Z" fill="#1D9E75"/>
+              <path d="M4 24L24 6L44 24" stroke="#1D9E75" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+              <rect x="20" y="30" width="8" height="12" rx="1" fill="#16795A"/>
+              <circle cx="34" cy="14" r="8" fill="#1D9E75" stroke="white" strokeWidth="2.5"/>
+              <path d="M30.5 14L33 16.5L37.5 11.5" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+            <div className="flex flex-col leading-none">
+              <span className="text-xl font-bold tracking-tight text-white">Wayside <span className="text-amber-porch">Admin</span></span>
             </div>
-            <h1 className="text-xl font-bold tracking-tight text-white">Wayside <span className="text-amber-porch">Admin</span></h1>
           </div>
         </div>
         
@@ -215,8 +221,14 @@ export default function AdminApp() {
       {/* Mobile Header */}
       <header className="md:hidden sticky top-0 z-20 bg-deep-forest text-white shadow-lg border-b border-white/10 p-4 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded-full bg-pathway-green flex items-center justify-center text-white text-xs font-bold">W</div>
-          <span className="font-bold">Admin</span>
+          <svg viewBox="0 0 48 48" className="w-6 h-6 shrink-0" fill="none">
+            <path d="M8 22L24 8L40 22V40C40 41.1 39.1 42 38 42H10C8.9 42 8 41.1 8 40V22Z" fill="#1D9E75"/>
+            <path d="M4 24L24 6L44 24" stroke="#1D9E75" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+            <rect x="20" y="30" width="8" height="12" rx="1" fill="#16795A"/>
+            <circle cx="34" cy="14" r="8" fill="#1D9E75" stroke="white" strokeWidth="2.5"/>
+            <path d="M30.5 14L33 16.5L37.5 11.5" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+          <span className="font-bold text-lg">Admin</span>
         </div>
         <button onClick={handleLogout} className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 text-white">
           <LogOut className="w-4 h-4" />
