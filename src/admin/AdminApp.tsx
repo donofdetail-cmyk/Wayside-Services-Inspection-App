@@ -2,17 +2,19 @@ import { useState, useEffect } from 'react';
 import { AuthLogin } from '../components/AuthLogin';
 import { supabase } from '../d2d/supabaseClient';
 import { Toaster, toast } from 'sonner';
-import { LayoutDashboard, Users, ClipboardList, LogOut, Loader2, MapPin, Search, FileText, Download, X, Calendar as CalendarIcon, BarChart3, Inbox, Clock, Send, Settings } from 'lucide-react';
+import { Menu, LayoutDashboard, Users, ClipboardList, LogOut, Loader2, MapPin, Search, FileText, Download, X, Calendar as CalendarIcon, BarChart3, Inbox, Clock, Send, Settings } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { format, parseISO, startOfWeek, addDays, isSameDay } from 'date-fns';
 import { BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
 
-type AdminTab = 'dashboard' | 'inspections' | 'leads' | 'dispatch' | 'action_center' | 'analytics' | 'team' | 'settings';
+type AdminTab = 'dashboard' | 'clients' | 'analytics' | 'dispatch' | 'action_center' | 'inspections' | 'leads' | 'team' | 'settings';
 
 export default function AdminApp() {
   const [adminName, setAdminName] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<AdminTab>('dashboard');
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [touchpoints, setTouchpoints] = useState<any[]>([]);
   
   const [inspections, setInspections] = useState<any[]>([]);
   const [leads, setLeads] = useState<any[]>([]);
@@ -53,12 +55,13 @@ export default function AdminApp() {
     async function fetchData() {
       setLoading(true);
       try {
-        const [inspectionsRes, leadsRes, profilesRes, settingsRes, templatesRes] = await Promise.all([
+        const [inspectionsRes, leadsRes, profilesRes, settingsRes, templatesRes, touchpointsRes] = await Promise.all([
           supabase.from('inspections').select('*').order('created_at', { ascending: false }),
           supabase.from('d2d_leads').select('*').order('created_at', { ascending: false }),
           supabase.from('profiles').select('*').order('created_at', { ascending: true }),
           supabase.from('company_settings').select('*').single(),
-          supabase.from('inspection_templates').select('*').order('order_index', { ascending: true })
+          supabase.from('inspection_templates').select('*').order('order_index', { ascending: true }),
+          supabase.from('client_touchpoints').select('*').order('scheduled_for', { ascending: true })
         ]);
         
         if (inspectionsRes.error) throw inspectionsRes.error;
@@ -70,6 +73,7 @@ export default function AdminApp() {
         setProfiles(profilesRes.data || []);
         setCompanySettings(settingsRes.data || { company_name: 'Wayside Services' });
         setTemplates(templatesRes.data || []);
+        setTouchpoints(touchpointsRes.data || []);
       } catch (err: any) {
         console.error('Fetch error:', err);
         toast.error('Failed to load dashboard data');
@@ -95,6 +99,11 @@ export default function AdminApp() {
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'inspections' }, (payload) => {
         setInspections(prev => prev.map(i => i.id === payload.new.id ? payload.new as any : i));
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'client_touchpoints' }, () => {
+        supabase.from('client_touchpoints').select('*').order('scheduled_for', { ascending: true }).then(res => {
+          if (res.data) setTouchpoints(res.data);
+        });
       })
       .subscribe();
 
@@ -493,6 +502,82 @@ export default function AdminApp() {
     }
   };
 
+  const renderClients = () => {
+    const clientMap: Record<string, {
+      name: string;
+      address: string;
+      phone: string;
+      email: string;
+      inspections: any[];
+      leads: any[];
+      touchpoints: any[];
+    }> = {};
+
+    leads.forEach(l => {
+      if (!l.address) return;
+      if (!clientMap[l.address]) clientMap[l.address] = { name: l.contact_name || 'Resident', address: l.address, phone: '', email: '', inspections: [], leads: [], touchpoints: [] };
+      clientMap[l.address].leads.push(l);
+    });
+
+    inspections.forEach(i => {
+      if (!i.property_address) return;
+      if (!clientMap[i.property_address]) clientMap[i.property_address] = { name: i.client_name, address: i.property_address, phone: i.client_phone || '', email: i.client_email || '', inspections: [], leads: [], touchpoints: [] };
+      clientMap[i.property_address].inspections.push(i);
+      if (i.client_name && clientMap[i.property_address].name === 'Resident') {
+        clientMap[i.property_address].name = i.client_name;
+      }
+      if (i.client_phone) clientMap[i.property_address].phone = i.client_phone;
+      if (i.client_email) clientMap[i.property_address].email = i.client_email;
+    });
+
+    touchpoints.forEach(t => {
+      if (!t.property_address) return;
+      if (clientMap[t.property_address]) {
+        clientMap[t.property_address].touchpoints.push(t);
+      }
+    });
+
+    const clientsList = Object.values(clientMap).sort((a,b) => a.name.localeCompare(b.name));
+
+    return (
+      <div className="bg-white rounded-2xl shadow-xl border border-deep-forest/5 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <div className="p-6 border-b border-deep-forest/10 flex justify-between items-center">
+          <h3 className="text-xl font-bold text-deep-forest flex items-center gap-2">
+            <Users className="w-5 h-5 text-amber-porch" /> Unified Client Roster
+          </h3>
+          <span className="bg-deep-forest/5 text-deep-forest px-3 py-1 rounded-full text-xs font-bold uppercase">{clientsList.length} Clients</span>
+        </div>
+        <div className="divide-y divide-deep-forest/5">
+          {clientsList.length === 0 ? (
+            <div className="p-8 text-center text-deep-forest/50">No clients found.</div>
+          ) : (
+            clientsList.map((c, idx) => (
+              <div key={idx} className="p-6 hover:bg-linen-white/30 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex-1">
+                  <p className="font-bold text-deep-forest text-lg">{c.name}</p>
+                  <p className="text-sm text-deep-forest/60">{c.address}</p>
+                  {(c.phone || c.email) && (
+                    <div className="flex items-center gap-3 mt-2 text-xs text-deep-forest/50 font-medium">
+                      {c.phone && <span>{c.phone}</span>}
+                      {c.email && <span>{c.email}</span>}
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-4 shrink-0">
+                  <div className="flex flex-col gap-1 items-end text-xs font-bold uppercase tracking-wide">
+                    {c.inspections.length > 0 && <span className="text-pathway-green">{c.inspections.length} Inspections</span>}
+                    {c.leads.length > 0 && <span className="text-amber-porch">{c.leads.length} Door Hits</span>}
+                    {c.touchpoints.length > 0 && <span className="text-deep-forest/40">{c.touchpoints.length} Touchpoints</span>}
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const renderLeads = () => (
     <div className="bg-white rounded-2xl shadow-xl border border-deep-forest/5 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="p-6 border-b border-deep-forest/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -670,6 +755,8 @@ export default function AdminApp() {
   };
 
   const renderActionCenter = () => {
+    const pendingTouchpoints = touchpoints.filter(t => t.status === 'pending');
+    
     const pendingLeads = leads.filter(l => l.status === 'not_home' && l.follow_up_status === 'pending');
     const pendingInspections = inspections.filter(i => i.follow_up_status === 'pending');
 
@@ -683,6 +770,43 @@ export default function AdminApp() {
           </div>
           
           <div className="space-y-8">
+            {/* AI Nurturing Engine Queue */}
+            <div>
+              <div className="flex justify-between items-center mb-4">
+                <h4 className="font-bold text-deep-forest">Scheduled Cadence Touchpoints</h4>
+                <Button onClick={async () => {
+                  for (const t of pendingTouchpoints) {
+                    await supabase.from('client_touchpoints').update({ status: 'sent', sent_at: new Date().toISOString() }).eq('id', t.id);
+                  }
+                  toast.success(`Executed ${pendingTouchpoints.length} Nurture Actions!`);
+                  setTouchpoints(touchpoints.map(t => pendingTouchpoints.find(p => p.id === t.id) ? { ...t, status: 'sent', sent_at: new Date().toISOString() } : t));
+                }} disabled={pendingTouchpoints.length === 0} className="bg-amber-porch text-white hover:brightness-110 gap-2">
+                  <Send className="w-4 h-4" /> Execute All Touchpoints
+                </Button>
+              </div>
+              {pendingTouchpoints.length === 0 ? <p className="text-sm text-deep-forest/50">Inbox zero! No upcoming cadences.</p> : (
+                <div className="grid gap-3">
+                  {pendingTouchpoints.map(t => {
+                    const isOverdue = new Date(t.scheduled_for) <= new Date();
+                    return (
+                      <div key={t.id} className="p-4 border border-deep-forest/10 rounded-xl flex justify-between items-center bg-linen-white/30">
+                        <div>
+                          <p className="font-bold text-sm text-deep-forest">{t.client_name} - <span className="capitalize">{t.campaign_type.replace(/_/g, ' ')}</span></p>
+                          <p className="text-xs text-deep-forest/60">{t.property_address}</p>
+                          <p className={`text-xs mt-1 font-bold ${isOverdue ? 'text-red-500' : 'text-deep-forest/40'}`}>
+                            {isOverdue ? 'Overdue: ' : 'Scheduled for: '} {new Date(t.scheduled_for).toLocaleDateString()}
+                          </p>
+                        </div>
+                        <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded ${isOverdue ? 'bg-red-50 text-red-500' : 'bg-amber-porch/10 text-amber-porch'}`}>
+                          {isOverdue ? 'Requires Action' : 'Pending'}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
             {/* Follow up leads */}
             <div>
               <div className="flex justify-between items-center mb-4">
@@ -905,21 +1029,85 @@ export default function AdminApp() {
 
   const tabs = [
     { id: 'dashboard' as AdminTab, label: 'Overview', icon: LayoutDashboard },
+    { id: 'clients' as AdminTab, label: 'Clients', icon: Users },
     { id: 'analytics' as AdminTab, label: 'Analytics', icon: BarChart3 },
     { id: 'dispatch' as AdminTab, label: 'Dispatch', icon: CalendarIcon },
     { id: 'action_center' as AdminTab, label: 'Action Center', icon: Inbox },
     { id: 'inspections' as AdminTab, label: 'Inspections', icon: ClipboardList },
     { id: 'leads' as AdminTab, label: 'Leads', icon: MapPin },
     { id: 'team' as AdminTab, label: 'Team', icon: Users },
-    { id: 'settings' as AdminTab, label: 'Settings', icon: Settings },
+    { id: 'settings' as AdminTab, label: 'Settings', icon: Settings }
   ];
 
   return (
-    <div className="min-h-screen bg-linen-white text-deep-forest pb-20 md:pb-0 md:pl-64 font-sans flex flex-col">
+    <div className="min-h-screen bg-linen-white text-deep-forest font-sans flex flex-col md:flex-row w-full overflow-hidden">
       <Toaster position="top-center" richColors />
       
+      {/* ── Mobile Drawer Overlay ── */}
+      {menuOpen && (
+        <div
+          className="fixed inset-0 z-[9999] flex md:hidden"
+          onClick={() => setMenuOpen(false)}
+        >
+          {/* Backdrop */}
+          <div className="flex-1 bg-black/40" />
+
+          {/* Drawer */}
+          <div
+            className="w-72 bg-deep-forest flex flex-col h-full shadow-2xl animate-in slide-in-from-right duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Drawer header */}
+            <div className="flex items-center justify-between px-5 py-5 border-b border-white/10 shrink-0">
+              <div className="flex flex-col">
+                <span className="text-[10px] uppercase font-bold text-white/40 tracking-wider">Signed in as</span>
+                <span className="text-base font-bold text-amber-porch">Admin</span>
+              </div>
+              <button
+                onClick={() => setMenuOpen(false)}
+                className="text-white/40 hover:text-white transition-colors p-1"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Nav items */}
+            <div className="flex flex-col gap-1 px-3 py-4 flex-1 overflow-y-auto">
+              {tabs.map(({ id, label, icon: Icon }) => (
+                <button
+                  key={id}
+                  onClick={() => { setActiveTab(id); setMenuOpen(false); }}
+                  className={`flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all text-sm font-semibold text-left relative ${
+                    activeTab === id ? 'bg-white/10 text-white' : 'text-white/80 hover:bg-white/10 hover:text-white'
+                  }`}
+                >
+                  <Icon className={`w-4 h-4 shrink-0 ${activeTab === id ? 'text-pathway-green' : 'text-white/50'}`} />
+                  {label}
+                  {id === 'action_center' && touchpoints.filter(t => t.status === 'pending').length > 0 && (
+                    <span className="ml-auto bg-amber-porch text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                      {touchpoints.filter(t => t.status === 'pending').length}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+
+            {/* Logout */}
+            <div className="px-5 pb-8 pt-2 border-t border-white/10 shrink-0">
+              <button
+                onClick={handleLogout}
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-white/10 text-white/50 hover:text-white hover:border-white/30 transition-all text-sm font-bold"
+              >
+                <LogOut className="w-4 h-4" />
+                Log Out
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Desktop Sidebar */}
-      <aside className="hidden md:flex flex-col fixed top-0 left-0 h-full w-64 bg-deep-forest border-r border-white/10 z-30 shadow-2xl">
+      <aside className="hidden md:flex flex-col w-64 bg-deep-forest text-linen-white shrink-0 sticky top-0 h-screen">
         <div className="p-6 border-b border-white/10">
           <div className="flex items-center gap-3">
             <svg viewBox="0 0 48 48" className="w-8 h-8 shrink-0 drop-shadow-[0_0_10px_rgba(29,158,117,0.3)]" fill="none">
@@ -929,13 +1117,11 @@ export default function AdminApp() {
               <circle cx="34" cy="14" r="8" fill="#1D9E75" stroke="white" strokeWidth="2.5"/>
               <path d="M30.5 14L33 16.5L37.5 11.5" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
-            <div className="flex flex-col leading-none">
-              <span className="text-xl font-bold tracking-tight text-white">Wayside <span className="text-amber-porch">Admin</span></span>
-            </div>
+            <span className="text-xl font-bold tracking-tight text-white">Wayside <span className="text-amber-porch">Admin</span></span>
           </div>
         </div>
         
-        <nav className="flex-1 p-4 flex flex-col gap-2">
+        <nav className="flex-1 p-4 flex flex-col gap-2 overflow-y-auto">
           {tabs.map(tab => {
             const Icon = tab.icon;
             const active = activeTab === tab.id;
@@ -946,26 +1132,27 @@ export default function AdminApp() {
                 className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-bold text-sm ${
                   active 
                     ? 'bg-pathway-green text-white shadow-[0_0_15px_rgba(29,158,117,0.3)]' 
-                    : 'text-white/60 hover:text-white hover:bg-white/5'
+                    : 'text-white/60 hover:text-white hover:bg-white/10'
                 }`}
               >
                 <Icon className={`w-5 h-5 ${active ? 'text-white' : 'text-white/40'}`} />
                 {tab.label}
+                {tab.id === 'action_center' && touchpoints.filter(t => t.status === 'pending').length > 0 && (
+                  <span className="ml-auto bg-amber-porch text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                    {touchpoints.filter(t => t.status === 'pending').length}
+                  </span>
+                )}
               </button>
             );
           })}
         </nav>
         
-        <div className="p-4 border-t border-white/10">
-          <div className="flex flex-col gap-1 mb-4 px-2">
-            <span className="text-[10px] uppercase font-bold text-white/40 tracking-wider">Signed in as</span>
-            <span className="text-sm font-bold text-amber-porch truncate">{adminName}</span>
-          </div>
-          <button
+        <div className="p-5 border-t border-white/10 shrink-0">
+          <button 
             onClick={handleLogout}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-white/60 hover:text-white hover:bg-red-500/20 hover:text-red-400 transition-colors font-bold text-sm"
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-white/10 text-white/50 hover:text-white hover:border-white/30 transition-all text-sm font-bold"
           >
-            <LogOut className="w-5 h-5 opacity-50" />
+            <LogOut className="w-4 h-4" />
             Log Out
           </button>
         </div>
@@ -1004,6 +1191,7 @@ export default function AdminApp() {
         ) : (
           <>
             {activeTab === 'dashboard' && renderDashboard()}
+            {activeTab === 'clients' && renderClients()}
             {activeTab === 'analytics' && renderAnalytics()}
             {activeTab === 'dispatch' && renderDispatch()}
             {activeTab === 'action_center' && renderActionCenter()}
@@ -1014,28 +1202,6 @@ export default function AdminApp() {
           </>
         )}
       </main>
-
-      {/* Mobile Bottom Nav */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-deep-forest/10 px-6 py-3 flex justify-between items-center z-50 shadow-[0_-10px_40px_rgba(0,0,0,0.05)]">
-        {tabs.map(tab => {
-          const Icon = tab.icon;
-          const active = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className="flex flex-col items-center gap-1 relative"
-            >
-              <div className={`p-2 rounded-xl transition-colors ${active ? 'bg-pathway-green/10 text-pathway-green' : 'text-deep-forest/40'}`}>
-                <Icon className="w-6 h-6" />
-              </div>
-              <span className={`text-[10px] font-bold tracking-wide ${active ? 'text-pathway-green' : 'text-deep-forest/40'}`}>
-                {tab.label}
-              </span>
-            </button>
-          );
-        })}
-      </nav>
     </div>
   );
 }

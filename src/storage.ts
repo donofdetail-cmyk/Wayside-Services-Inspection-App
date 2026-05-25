@@ -106,7 +106,19 @@ export async function saveCompletedInspection(
     };
 
     const { error } = await supabase.from('inspections').insert([supabaseRecord]);
-    if (error) {
+    
+    if (!error) {
+      const sixMonths = new Date();
+      sixMonths.setMonth(sixMonths.getMonth() + 6);
+      await supabase.from('client_touchpoints').insert([{
+        client_name: record.clientInfo.clientName,
+        client_email: record.clientInfo.clientEmail || null,
+        client_phone: record.clientInfo.clientPhone || null,
+        property_address: record.clientInfo.propertyAddress,
+        campaign_type: '6_month_seasonal',
+        scheduled_for: sixMonths.toISOString()
+      }]);
+    } else {
       console.error('Supabase sync failed, queuing offline:', error);
       const queue = (await get<any[]>(OFFLINE_INSPECTIONS_KEY)) || [];
       queue.push(supabaseRecord);

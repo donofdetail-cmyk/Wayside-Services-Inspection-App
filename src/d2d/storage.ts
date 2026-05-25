@@ -14,6 +14,19 @@ export async function saveLeadToSupabase(lead: Omit<D2DLead, 'id' | 'created_at'
     .select()
     .single();
 
+  if (!error && data) {
+    if (lead.status === 'not_interested') {
+      const thirtyDays = new Date();
+      thirtyDays.setDate(thirtyDays.getDate() + 30);
+      await supabase.from('client_touchpoints').insert([{
+        client_name: lead.contact_name || 'Resident',
+        property_address: lead.address,
+        campaign_type: '30_day_nurture',
+        scheduled_for: thirtyDays.toISOString()
+      }]);
+    }
+  }
+
   if (error) {
     console.error('Supabase insert error:', error);
     await queueOfflineLead(lead);
