@@ -197,8 +197,8 @@ export default function AdminApp() {
   };
 
   const filteredInspections = inspections.filter(i => 
-    i.client_name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    i.property_address?.toLowerCase().includes(searchQuery.toLowerCase())
+    (i.client_name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+    (i.property_address || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const exportInspectionsCSV = () => {
@@ -461,9 +461,9 @@ export default function AdminApp() {
   );
 
   const filteredLeads = leads.filter(l => 
-    l.contact_name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    l.address?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    l.rep_name?.toLowerCase().includes(searchQuery.toLowerCase())
+    (l.contact_name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+    (l.address || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (l.rep_name || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const exportLeadsCSV = () => {
