@@ -80,7 +80,7 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
         setInspections(inspectionsRes.data || []);
         setLeads(leadsRes.data || []);
         setProfiles(profilesRes.data || []);
-        setCompanySettings(settingsRes.data || { company_name: 'Wayside Services' });
+
         setTemplates(templatesRes.data || []);
         setTouchpoints(touchpointsRes.data || []);
         setClientNotes(notesRes.data || []);
