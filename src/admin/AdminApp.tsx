@@ -6,8 +6,10 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { format, parseISO, startOfWeek, addDays, isSameDay } from 'date-fns';
 import { BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
+import { Logo } from '../components/Logo';
+import { DispatchMap } from './components/DispatchMap';
 
-type AdminTab = 'dashboard' | 'clients' | 'pipeline' | 'analytics' | 'dispatch' | 'action_center' | 'inspections' | 'leads' | 'team' | 'settings';
+type AdminTab = 'dashboard' | 'clients' | 'dispatch' | 'action_center' | 'inspections' | 'leads' | 'team' | 'settings';
 
 export default function AdminApp({ session, profile }: { session: any, profile: any }) {
   const [adminName, setAdminName] = useState<string | null>(profile?.full_name || null);
@@ -16,6 +18,7 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
   const [touchpoints, setTouchpoints] = useState<any[]>([]);
   const [clientNotes, setClientNotes] = useState<any[]>([]);
   const [communicationLogs, setCommunicationLogs] = useState<any[]>([]);
+  const [leadView, setLeadView] = useState<'list' | 'board'>('list');
   
   const [inspections, setInspections] = useState<any[]>([]);
   const [leads, setLeads] = useState<any[]>([]);
@@ -183,24 +186,82 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-2xl shadow-xl border border-deep-forest/5">
-          <h3 className="text-lg font-bold text-deep-forest mb-4">Top Performing Reps</h3>
-          <div className="divide-y divide-deep-forest/5">
-            {topReps.map(([name, stats], idx) => (
-              <div key={name} className="py-3 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-deep-forest/5 flex items-center justify-center text-sm font-bold text-deep-forest">
-                    {idx + 1}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="bg-white p-6 rounded-2xl shadow-xl border border-deep-forest/5 lg:col-span-1">
+            <h3 className="text-lg font-bold text-deep-forest mb-4">Top Performing Reps</h3>
+            <div className="divide-y divide-deep-forest/5">
+              {topReps.map(([name, stats], idx) => (
+                <div key={name} className="py-3 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-deep-forest/5 flex items-center justify-center text-sm font-bold text-deep-forest">
+                      {idx + 1}
+                    </div>
+                    <span className="font-bold text-deep-forest">{name}</span>
                   </div>
-                  <span className="font-bold text-deep-forest">{name}</span>
+                  <div className="text-right">
+                    <span className="text-sm font-bold text-pathway-green">{stats.appointments} Appts</span>
+                    <span className="text-xs text-deep-forest/40 ml-2">({stats.total} doors)</span>
+                  </div>
                 </div>
-                <div className="text-right">
-                  <span className="text-sm font-bold text-pathway-green">{stats.appointments} Appts</span>
-                  <span className="text-xs text-deep-forest/40 ml-2">({stats.total} doors)</span>
+              ))}
+              {topReps.length === 0 && <p className="text-sm text-deep-forest/50 py-2">No leads logged yet.</p>}
+            </div>
+          </div>
+          <div className="bg-white p-6 rounded-2xl shadow-xl border border-deep-forest/5 lg:col-span-2">
+            <h3 className="text-lg font-bold text-deep-forest mb-4 flex items-center gap-2"><BarChart3 className="w-5 h-5 text-amber-porch" /> 7-Day Performance</h3>
+            {(() => {
+              const last7Days = Array.from({length: 7}).map((_, i) => {
+                const d = new Date();
+                d.setDate(d.getDate() - (6 - i));
+                return d.toISOString().split('T')[0];
+              });
+              const chartData = last7Days.map(date => ({
+                date: date.substring(5),
+                leads: leads.filter(l => l.created_at.startsWith(date)).length,
+                inspections: inspections.filter(ins => ins.created_at.startsWith(date)).length
+              }));
+              return (
+                <div className="h-64 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={chartData}>
+                      <XAxis dataKey="date" stroke="#102e2150" fontSize={12} />
+                      <YAxis stroke="#102e2150" fontSize={12} allowDecimals={false} />
+                      <RechartsTooltip cursor={{fill: '#f5efe6'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}} />
+                      <Bar dataKey="leads" name="New Leads" fill="#1D9E75" radius={[4,4,0,0]} />
+                      <Bar dataKey="inspections" name="Completed Inspections" fill="#f0a500" radius={[4,4,0,0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
                 </div>
-              </div>
-            ))}
-            {topReps.length === 0 && <p className="text-sm text-deep-forest/50 py-2">No leads logged yet.</p>}
+              );
+            })()}
+          </div>
+        </div>
+
+        <div className="bg-white p-6 rounded-2xl shadow-xl border border-deep-forest/5">
+          <h3 className="text-lg font-bold text-deep-forest mb-4 flex items-center gap-2"><Users className="w-5 h-5 text-amber-porch" /> Technician Leaderboard</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {(() => {
+              const techStats = profiles.filter(p => p.role === 'technician').map(tech => {
+                const techInspections = inspections.filter(i => i.technician_id === tech.id);
+                const avgDuration = techInspections.length ? techInspections.reduce((acc, i) => acc + (i.duration_seconds || 0), 0) / techInspections.length : 0;
+                return { name: tech.full_name, total: techInspections.length, avgDuration: Math.round(avgDuration / 60) };
+              }).sort((a, b) => b.total - a.total);
+              
+              if (techStats.length === 0) return <p className="text-sm text-deep-forest/50 py-2">No technicians found.</p>;
+              
+              return techStats.map((t, idx) => (
+                <div key={idx} className="flex items-center justify-between p-4 border border-deep-forest/10 rounded-xl">
+                  <div className="flex items-center gap-3">
+                    <span className="font-bold text-amber-porch text-lg w-6">{idx + 1}</span>
+                    <span className="font-bold text-deep-forest">{t.name}</span>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-bold text-pathway-green">{t.total} Inspections</p>
+                    <p className="text-xs text-deep-forest/60">Avg. {t.avgDuration} mins</p>
+                  </div>
+                </div>
+              ));
+            })()}
           </div>
         </div>
       </div>
@@ -483,9 +544,11 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
   );
 
   const filteredLeads = leads.filter(l => 
-    (l.contact_name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
-    (l.address || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (l.rep_name || '').toLowerCase().includes(searchQuery.toLowerCase())
+    l.status !== 'scheduled' && (
+      (l.contact_name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+      (l.address || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (l.rep_name || '').toLowerCase().includes(searchQuery.toLowerCase())
+    )
   );
 
   const exportLeadsCSV = () => {
@@ -606,7 +669,8 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
       touchpoints: any[];
     }> = {};
 
-    leads.forEach(l => {
+    // Only clients who have been scheduled belong here
+    leads.filter(l => l.status === 'scheduled').forEach(l => {
       if (!l.address) return;
       if (!clientMap[l.address]) clientMap[l.address] = { name: l.contact_name || 'Resident', address: l.address, phone: '', email: '', inspections: [], leads: [], touchpoints: [] };
       clientMap[l.address].leads.push(l);
@@ -694,13 +758,12 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
     );
   };
 
-  const renderPipeline = () => {
+  const renderLeads = () => {
     const columns = [
       { id: 'new', label: 'New Leads', color: 'bg-deep-forest/5', border: 'border-deep-forest/10' },
       { id: 'not_home', label: 'Not Home', color: 'bg-amber-porch/5', border: 'border-amber-porch/20' },
       { id: 'not_interested', label: 'Not Interested', color: 'bg-red-50', border: 'border-red-200' },
       { id: 'interested', label: 'Interested', color: 'bg-blue-50', border: 'border-blue-200' },
-      { id: 'scheduled', label: 'Scheduled', color: 'bg-pathway-green/10', border: 'border-pathway-green/20' }
     ];
 
     const handleDrop = async (e: React.DragEvent, newStatus: string) => {
@@ -708,277 +771,206 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
       const leadId = e.dataTransfer.getData('lead_id');
       if (!leadId) return;
 
-      // Optimistic update
       setLeads(leads.map(l => l.id === leadId ? { ...l, status: newStatus } : l));
-      
       const { error } = await supabase.from('d2d_leads').update({ status: newStatus }).eq('id', leadId);
-      if (error) {
-        toast.error('Failed to update status');
-      } else {
-        toast.success(`Moved to ${newStatus.replace('_', ' ')}`);
-      }
+      if (error) toast.error('Failed to update status');
+      else toast.success(`Moved to ${newStatus.replace('_', ' ')}`);
     };
 
     return (
-      <div className="h-full flex flex-col animate-in fade-in slide-in-from-bottom-4 duration-500">
-        <div className="flex justify-between items-center mb-6 shrink-0">
-          <h3 className="text-xl font-bold text-deep-forest flex items-center gap-2">
-            <Kanban className="w-5 h-5 text-amber-porch" /> Pipeline
-          </h3>
+      <div className="bg-white rounded-2xl shadow-xl border border-deep-forest/5 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500 flex flex-col h-full">
+        <div className="p-6 border-b border-deep-forest/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shrink-0">
+          <div className="flex items-center gap-4">
+            <h3 className="text-xl font-bold text-deep-forest flex items-center gap-2">
+              <MapPin className="w-5 h-5 text-amber-porch" /> Leads
+            </h3>
+            <div className="bg-deep-forest/5 rounded-lg p-1 flex items-center">
+              <button 
+                onClick={() => setLeadView('list')}
+                className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${leadView === 'list' ? 'bg-white text-deep-forest shadow' : 'text-deep-forest/50 hover:text-deep-forest'}`}
+              >
+                List View
+              </button>
+              <button 
+                onClick={() => setLeadView('board')}
+                className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${leadView === 'board' ? 'bg-white text-deep-forest shadow' : 'text-deep-forest/50 hover:text-deep-forest'}`}
+              >
+                Board View
+              </button>
+            </div>
+          </div>
+          {leadView === 'list' && (
+            <div className="flex items-center gap-3">
+              <div className="relative w-full sm:w-64">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-deep-forest/40" />
+                <Input 
+                  placeholder="Search leads..." 
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="pl-9 h-9 bg-linen-white/50 border-deep-forest/10 rounded-lg text-sm"
+                />
+              </div>
+              <Button onClick={exportLeadsCSV} variant="outline" className="border-deep-forest/20 text-deep-forest gap-2 rounded-xl">
+                <Download className="w-4 h-4" /> Export CSV
+              </Button>
+            </div>
+          )}
         </div>
         
-        <div className="flex-1 flex gap-4 overflow-x-auto pb-4 items-stretch min-h-[600px]">
-          {columns.map(col => {
-            const colLeads = leads.filter(l => l.status === col.id);
-            return (
-              <div 
-                key={col.id} 
-                className={`w-80 shrink-0 flex flex-col rounded-2xl border ${col.border} ${col.color}`}
-                onDragOver={e => e.preventDefault()}
-                onDrop={e => handleDrop(e, col.id)}
-              >
-                <div className="p-4 border-b border-black/5 shrink-0 flex justify-between items-center pointer-events-none">
-                  <h4 className="font-bold text-sm text-deep-forest uppercase tracking-wider">{col.label}</h4>
-                  <span className="bg-white/50 px-2 py-0.5 rounded text-xs font-bold text-deep-forest/50">{colLeads.length}</span>
+        {leadView === 'list' ? (
+          <div className="divide-y divide-deep-forest/5 overflow-y-auto">
+            {filteredLeads.length === 0 ? (
+              <div className="p-8 text-center text-deep-forest/50">No leads found.</div>
+            ) : (
+              filteredLeads.map(lead => (
+                <div key={lead.id} className="p-6 hover:bg-linen-white/30 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex-1">
+                    <p className="font-bold text-deep-forest text-lg">{lead.contact_name || 'No Contact Name'}</p>
+                    <p className="text-sm text-deep-forest/60">{lead.address}</p>
+                    <p className="text-xs text-deep-forest/40 mt-1">Logged by {lead.rep_name}</p>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <div className="text-right flex flex-col items-end gap-2">
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-deep-forest/10 text-deep-forest text-xs font-bold uppercase tracking-wide">
+                        {lead.status ? lead.status.replace('_', ' ') : 'Unknown'}
+                      </span>
+                      {lead.status === 'scheduled' && !lead.assigned_tech_id && (
+                        <select
+                          className="text-xs p-1.5 border border-deep-forest/20 rounded-md bg-white focus:outline-none"
+                          onChange={async (e) => {
+                            const techId = e.target.value;
+                            if (!techId) return;
+                            const { error } = await supabase.from('d2d_leads').update({ assigned_tech_id: techId }).eq('id', lead.id);
+                            if (error) toast.error('Failed to assign job');
+                            else {
+                              toast.success('Job assigned to tech!');
+                              setLeads(leads.map(l => l.id === lead.id ? { ...l, assigned_tech_id: techId } : l));
+                            }
+                          }}
+                          defaultValue=""
+                        >
+                          <option value="" disabled>Assign Tech...</option>
+                          {profiles.filter(p => p.role === 'technician').map(tech => (
+                            <option key={tech.id} value={tech.id}>{tech.full_name}</option>
+                          ))}
+                        </select>
+                      )}
+                      {lead.assigned_tech_id && (
+                        <span className="text-[10px] uppercase font-bold text-pathway-green">
+                          Assigned to {profiles.find(p => p.id === lead.assigned_tech_id)?.full_name || 'Tech'}
+                        </span>
+                      )}
+                    </div>
+                    <Button variant="ghost" onClick={() => setSelectedLead(lead)} className="text-xs font-bold text-deep-forest hover:bg-deep-forest/5 h-8">
+                      View Details
+                    </Button>
+                    <button onClick={() => deleteLead(lead.id)} className="w-8 h-8 rounded-lg hover:bg-red-50 text-deep-forest/20 hover:text-red-500 flex items-center justify-center transition-colors" title="Delete">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
+              ))
+            )}
+          </div>
+        ) : (
+          <div className="flex-1 flex gap-4 overflow-x-auto p-6 items-stretch min-h-[600px] bg-linen-white/20">
+            {columns.map(col => {
+              const colLeads = leads.filter(l => l.status === col.id);
+              return (
                 <div 
-                  className="flex-1 p-3 flex flex-col gap-3 overflow-y-auto min-h-0 transition-all"
-                  onDragEnter={e => {
-                    e.preventDefault();
-                    e.currentTarget.classList.add('bg-white/50', 'ring-2', 'ring-amber-porch', 'ring-inset', 'rounded-xl');
-                  }}
-                  onDragLeave={e => {
-                    e.currentTarget.classList.remove('bg-white/50', 'ring-2', 'ring-amber-porch', 'ring-inset', 'rounded-xl');
-                  }}
-                  onDrop={e => {
-                    e.currentTarget.classList.remove('bg-white/50', 'ring-2', 'ring-amber-porch', 'ring-inset', 'rounded-xl');
-                    handleDrop(e, col.id);
-                  }}
+                  key={col.id} 
+                  className={`w-80 shrink-0 flex flex-col rounded-2xl border ${col.border} ${col.color}`}
                   onDragOver={e => e.preventDefault()}
+                  onDrop={e => handleDrop(e, col.id)}
                 >
-                  {colLeads.map(l => (
-                    <div 
-                      key={l.id} 
-                      draggable 
-                      onDragStart={e => {
-                        e.dataTransfer.setData('lead_id', l.id);
-                        e.currentTarget.style.opacity = '0.4';
-                      }}
-                      onDragEnd={e => {
-                        e.currentTarget.style.opacity = '1';
-                      }}
-                      className="bg-white p-4 rounded-xl shadow-sm border border-deep-forest/5 cursor-grab active:cursor-grabbing hover:shadow-md transition-all group relative"
-                    >
-                      <p className="font-bold text-sm text-deep-forest">{l.contact_name || 'Resident'}</p>
-                      <p className="text-xs text-deep-forest/60 mt-1 truncate">{l.address}</p>
-                      <div className="flex items-center justify-between mt-3">
-                        <p className="text-[10px] uppercase font-bold text-deep-forest/40">{new Date(l.created_at).toLocaleDateString()}</p>
-                        <p className="text-[10px] font-bold text-amber-porch bg-amber-porch/10 px-2 py-0.5 rounded">{l.rep_name}</p>
+                  <div className="p-4 border-b border-black/5 shrink-0 flex justify-between items-center pointer-events-none">
+                    <h4 className="font-bold text-sm text-deep-forest uppercase tracking-wider">{col.label}</h4>
+                    <span className="bg-white/50 px-2 py-0.5 rounded text-xs font-bold text-deep-forest/50">{colLeads.length}</span>
+                  </div>
+                  <div 
+                    className="flex-1 p-3 flex flex-col gap-3 overflow-y-auto min-h-0 transition-all"
+                    onDragEnter={e => {
+                      e.preventDefault();
+                      e.currentTarget.classList.add('bg-white/50', 'ring-2', 'ring-amber-porch', 'ring-inset', 'rounded-xl');
+                    }}
+                    onDragLeave={e => {
+                      e.currentTarget.classList.remove('bg-white/50', 'ring-2', 'ring-amber-porch', 'ring-inset', 'rounded-xl');
+                    }}
+                    onDrop={e => {
+                      e.currentTarget.classList.remove('bg-white/50', 'ring-2', 'ring-amber-porch', 'ring-inset', 'rounded-xl');
+                      handleDrop(e, col.id);
+                    }}
+                    onDragOver={e => e.preventDefault()}
+                  >
+                    {colLeads.map(l => (
+                      <div 
+                        key={l.id} 
+                        draggable 
+                        onDragStart={e => {
+                          e.dataTransfer.setData('lead_id', l.id);
+                          e.currentTarget.style.opacity = '0.4';
+                        }}
+                        onDragEnd={e => {
+                          e.currentTarget.style.opacity = '1';
+                        }}
+                        className="bg-white p-4 rounded-xl shadow-sm border border-deep-forest/5 cursor-grab active:cursor-grabbing hover:shadow-md transition-all group relative"
+                        onClick={() => setSelectedLead(l)}
+                      >
+                        <p className="font-bold text-sm text-deep-forest">{l.contact_name || 'Resident'}</p>
+                        <p className="text-xs text-deep-forest/60 mt-1 truncate">{l.address}</p>
+                        <div className="flex items-center justify-between mt-3">
+                          <p className="text-[10px] uppercase font-bold text-deep-forest/40">{new Date(l.created_at).toLocaleDateString()}</p>
+                          <p className="text-[10px] font-bold text-amber-porch bg-amber-porch/10 px-2 py-0.5 rounded">{l.rep_name}</p>
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                  {colLeads.length === 0 && (
-                    <div className="flex-1 flex items-center justify-center border-2 border-dashed border-black/5 rounded-xl text-deep-forest/30 text-xs font-bold uppercase tracking-wider">
-                      Drop Here
-                    </div>
-                  )}
+                    ))}
+                    {colLeads.length === 0 && (
+                      <div className="flex-1 flex items-center justify-center border-2 border-dashed border-black/5 rounded-xl text-deep-forest/30 text-xs font-bold uppercase tracking-wider">
+                        Drop Here
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     );
   };
 
-  const renderLeads = () => (
-    <div className="bg-white rounded-2xl shadow-xl border border-deep-forest/5 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="p-6 border-b border-deep-forest/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <h3 className="text-xl font-bold text-deep-forest flex items-center gap-2">
-          <MapPin className="w-5 h-5 text-amber-porch" /> Leads
-        </h3>
-        <div className="flex items-center gap-3">
-          <div className="relative w-full sm:w-64">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-deep-forest/40" />
-            <Input 
-              placeholder="Search leads..." 
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="pl-9 h-9 bg-linen-white/50 border-deep-forest/10 rounded-lg text-sm"
-            />
-          </div>
-          <Button onClick={exportLeadsCSV} variant="outline" className="border-deep-forest/20 text-deep-forest gap-2 rounded-xl">
-            <Download className="w-4 h-4" /> Export CSV
-          </Button>
-        </div>
-      </div>
-      <div className="divide-y divide-deep-forest/5">
-        {filteredLeads.length === 0 ? (
-          <div className="p-8 text-center text-deep-forest/50">No leads found.</div>
-        ) : (
-          filteredLeads.map(lead => (
-            <div key={lead.id} className="p-6 hover:bg-linen-white/30 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="flex-1">
-                <p className="font-bold text-deep-forest text-lg">{lead.contact_name || 'No Contact Name'}</p>
-                <p className="text-sm text-deep-forest/60">{lead.address}</p>
-                <p className="text-xs text-deep-forest/40 mt-1">Logged by {lead.rep_name}</p>
-              </div>
-              <div className="flex items-center gap-3 shrink-0">
-                <div className="text-right flex flex-col items-end gap-2">
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-deep-forest/10 text-deep-forest text-xs font-bold uppercase tracking-wide">
-                    {lead.status ? lead.status.replace('_', ' ') : 'Unknown'}
-                  </span>
-                  {lead.status === 'scheduled' && !lead.assigned_tech_id && (
-                    <select
-                      className="text-xs p-1.5 border border-deep-forest/20 rounded-md bg-white focus:outline-none"
-                      onChange={async (e) => {
-                        const techId = e.target.value;
-                        if (!techId) return;
-                        const { error } = await supabase.from('d2d_leads').update({ assigned_tech_id: techId }).eq('id', lead.id);
-                        if (error) toast.error('Failed to assign job');
-                        else {
-                          toast.success('Job assigned to tech!');
-                          setLeads(leads.map(l => l.id === lead.id ? { ...l, assigned_tech_id: techId } : l));
-                        }
-                      }}
-                      defaultValue=""
-                    >
-                      <option value="" disabled>Assign Tech...</option>
-                      {profiles.filter(p => p.role === 'technician').map(tech => (
-                        <option key={tech.id} value={tech.id}>{tech.full_name}</option>
-                      ))}
-                    </select>
-                  )}
-                  {lead.assigned_tech_id && (
-                    <span className="text-[10px] uppercase font-bold text-pathway-green">
-                      Assigned to {profiles.find(p => p.id === lead.assigned_tech_id)?.full_name || 'Tech'}
-                    </span>
-                  )}
-                </div>
-                <Button variant="ghost" onClick={() => setSelectedLead(lead)} className="text-xs font-bold text-deep-forest hover:bg-deep-forest/5 h-8">
-                  View Details
-                </Button>
-                <button onClick={() => deleteLead(lead.id)} className="w-8 h-8 rounded-lg hover:bg-red-50 text-deep-forest/20 hover:text-red-500 flex items-center justify-center transition-colors" title="Delete">
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-    </div>
-  );
+  const handleAssignTech = async (leadId: string, techId: string) => {
+    const { error } = await supabase.from('d2d_leads').update({ assigned_tech_id: techId }).eq('id', leadId);
+    if (!error) {
+      setLeads(leads.map(l => l.id === leadId ? { ...l, assigned_tech_id: techId } : l));
+      toast.success('Assigned technician');
+    } else {
+      toast.error('Failed to assign technician');
+    }
+  };
 
-  const renderAnalytics = () => {
-    // Leads by Day (Last 7 Days)
-    const last7Days = Array.from({length: 7}).map((_, i) => {
-      const d = new Date();
-      d.setDate(d.getDate() - (6 - i));
-      return d.toISOString().split('T')[0];
-    });
-    
-    const chartData = last7Days.map(date => ({
-      date: date.substring(5), // MM-DD
-      leads: leads.filter(l => l.created_at.startsWith(date)).length,
-      inspections: inspections.filter(ins => ins.created_at.startsWith(date)).length
-    }));
-
-    const techStats = profiles.filter(p => p.role === 'technician').map(tech => {
-      const techInspections = inspections.filter(i => i.technician_id === tech.id);
-      const avgDuration = techInspections.length ? techInspections.reduce((acc, i) => acc + (i.duration_seconds || 0), 0) / techInspections.length : 0;
-      return { name: tech.full_name, total: techInspections.length, avgDuration: Math.round(avgDuration / 60) };
-    }).sort((a, b) => b.total - a.total);
-
-    return (
-      <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-        <div className="flex justify-between items-center">
-          <h3 className="text-xl font-bold text-deep-forest flex items-center gap-2">
-            <BarChart3 className="w-5 h-5 text-amber-porch" /> Analytics
-          </h3>
-        </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-white p-6 rounded-2xl shadow-xl border border-deep-forest/5">
-            <h3 className="font-bold text-deep-forest mb-6 flex items-center gap-2"><BarChart3 className="w-5 h-5 text-amber-porch" /> 7-Day Performance</h3>
-            <div className="h-64 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData}>
-                  <XAxis dataKey="date" stroke="#102e2150" fontSize={12} />
-                  <YAxis stroke="#102e2150" fontSize={12} allowDecimals={false} />
-                  <RechartsTooltip cursor={{fill: '#f5efe6'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}} />
-                  <Bar dataKey="leads" name="New Leads" fill="#1D9E75" radius={[4,4,0,0]} />
-                  <Bar dataKey="inspections" name="Completed Inspections" fill="#f0a500" radius={[4,4,0,0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          <div className="bg-white p-6 rounded-2xl shadow-xl border border-deep-forest/5">
-            <h3 className="font-bold text-deep-forest mb-6 flex items-center gap-2"><Users className="w-5 h-5 text-amber-porch" /> Technician Leaderboard</h3>
-            <div className="space-y-4">
-              {techStats.map((t, idx) => (
-                <div key={idx} className="flex items-center justify-between p-4 border border-deep-forest/10 rounded-xl">
-                  <div className="flex items-center gap-3">
-                    <span className="font-bold text-amber-porch text-lg w-6">{idx + 1}</span>
-                    <span className="font-bold text-deep-forest">{t.name}</span>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-bold text-pathway-green">{t.total} Inspections</p>
-                    <p className="text-xs text-deep-forest/60">Avg. {t.avgDuration} mins</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-    );
+  const handleScheduleTime = async (leadId: string, start: string | null, end: string | null) => {
+    const { error } = await supabase.from('d2d_leads').update({ scheduled_start: start, scheduled_end: end }).eq('id', leadId);
+    if (!error) {
+      setLeads(leads.map(l => l.id === leadId ? { ...l, scheduled_start: start, scheduled_end: end } : l));
+      toast.success('Updated schedule');
+    } else {
+      toast.error('Failed to update schedule');
+    }
   };
 
   const renderDispatch = () => {
-    const scheduledLeads = leads.filter(l => l.status === 'scheduled');
-    
     return (
-      <div className="bg-white rounded-2xl shadow-xl border border-deep-forest/5 p-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-        <h3 className="text-xl font-bold text-deep-forest flex items-center gap-2 mb-6">
-          <CalendarIcon className="w-5 h-5 text-amber-porch" /> Dispatch
+      <div className="flex flex-col h-full gap-4">
+        <h3 className="text-xl font-bold text-deep-forest flex items-center gap-2">
+          <CalendarIcon className="w-5 h-5 text-amber-porch" /> Route-Based Dispatch
         </h3>
-        <div className="space-y-4">
-          {scheduledLeads.length === 0 ? <p className="text-deep-forest/50">No scheduled leads.</p> : scheduledLeads.map(lead => (
-            <div key={lead.id} className="border border-deep-forest/10 rounded-xl p-4 flex flex-col xl:flex-row gap-4 items-center">
-              <div className="flex-1 w-full">
-                <p className="font-bold text-deep-forest">{lead.contact_name || 'No Name'} <span className="text-xs font-normal text-deep-forest/50 ml-2">Logged by {lead.rep_name}</span></p>
-                <p className="text-sm text-deep-forest/70 truncate" title={lead.address}>{lead.address}</p>
-              </div>
-              <div className="flex flex-col md:flex-row gap-3 items-center shrink-0">
-                <select
-                  className="text-sm p-2 border border-deep-forest/20 rounded-md bg-white focus:outline-none w-40"
-                  value={lead.assigned_tech_id || ''}
-                  onChange={async (e) => {
-                    const techId = e.target.value;
-                    const { error } = await supabase.from('d2d_leads').update({ assigned_tech_id: techId }).eq('id', lead.id);
-                    if (!error) setLeads(leads.map(l => l.id === lead.id ? { ...l, assigned_tech_id: techId } : l));
-                  }}
-                >
-                  <option value="" disabled>Assign Tech...</option>
-                  {profiles.filter(p => p.role === 'technician').map(tech => (
-                    <option key={tech.id} value={tech.id}>{tech.full_name}</option>
-                  ))}
-                </select>
-                <Input type="datetime-local" className="w-48 text-sm" value={lead.scheduled_start ? lead.scheduled_start.substring(0,16) : ''} onChange={async (e) => {
-                  const val = e.target.value ? new Date(e.target.value).toISOString() : null;
-                  const { error } = await supabase.from('d2d_leads').update({ scheduled_start: val }).eq('id', lead.id);
-                  if (!error) setLeads(leads.map(l => l.id === lead.id ? { ...l, scheduled_start: val } : l));
-                }} />
-                <span className="text-deep-forest/30 hidden md:block">to</span>
-                <Input type="datetime-local" className="w-48 text-sm" value={lead.scheduled_end ? lead.scheduled_end.substring(0,16) : ''} onChange={async (e) => {
-                  const val = e.target.value ? new Date(e.target.value).toISOString() : null;
-                  const { error } = await supabase.from('d2d_leads').update({ scheduled_end: val }).eq('id', lead.id);
-                  if (!error) setLeads(leads.map(l => l.id === lead.id ? { ...l, scheduled_end: val } : l));
-                }} />
-              </div>
-            </div>
-          ))}
-        </div>
+        <DispatchMap 
+          leads={leads} 
+          profiles={profiles} 
+          onAssignTech={handleAssignTech} 
+          onScheduleTime={handleScheduleTime} 
+        />
       </div>
     );
   };
@@ -1302,9 +1294,7 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
 
   const tabs = [
     { id: 'dashboard' as AdminTab, label: 'Overview', icon: LayoutDashboard },
-    { id: 'pipeline' as AdminTab, label: 'Pipeline', icon: Kanban },
     { id: 'clients' as AdminTab, label: 'Clients', icon: Users },
-    { id: 'analytics' as AdminTab, label: 'Analytics', icon: BarChart3 },
     { id: 'dispatch' as AdminTab, label: 'Dispatch', icon: CalendarIcon },
     { id: 'action_center' as AdminTab, label: 'Action Center', icon: Inbox },
     { id: 'inspections' as AdminTab, label: 'Inspections', icon: ClipboardList },
@@ -1383,16 +1373,7 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
       {/* Desktop Sidebar */}
       <aside className="hidden md:flex flex-col w-64 bg-deep-forest text-linen-white shrink-0 sticky top-0 h-screen">
         <div className="p-6 border-b border-white/10">
-          <div className="flex items-center gap-3">
-            <svg viewBox="0 0 48 48" className="w-8 h-8 shrink-0 drop-shadow-[0_0_10px_rgba(29,158,117,0.3)]" fill="none">
-              <path d="M8 22L24 8L40 22V40C40 41.1 39.1 42 38 42H10C8.9 42 8 41.1 8 40V22Z" fill="#1D9E75"/>
-              <path d="M4 24L24 6L44 24" stroke="#1D9E75" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
-              <rect x="20" y="30" width="8" height="12" rx="1" fill="#16795A"/>
-              <circle cx="34" cy="14" r="8" fill="#1D9E75" stroke="white" strokeWidth="2.5"/>
-              <path d="M30.5 14L33 16.5L37.5 11.5" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-            <span className="text-xl font-bold tracking-tight text-white">Wayside <span className="text-amber-porch">Admin</span></span>
-          </div>
+          <Logo />
         </div>
         
         <nav className="flex-1 p-4 flex flex-col gap-2 overflow-y-auto">
@@ -1436,19 +1417,7 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
       <header className="md:hidden h-20 bg-deep-forest text-linen-white flex items-center px-4 shadow-md sticky top-0 z-10 w-full shrink-0">
         <div className="w-full flex items-center justify-between">
           {/* Logo */}
-          <div className="flex items-center gap-2.5">
-            <svg viewBox="0 0 48 48" className="w-9 h-9" fill="none">
-              <path d="M8 22L24 8L40 22V40C40 41.1 39.1 42 38 42H10C8.9 42 8 41.1 8 40V22Z" fill="#1D9E75"/>
-              <path d="M4 24L24 6L44 24" stroke="#1D9E75" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
-              <rect x="20" y="30" width="8" height="12" rx="1" fill="#16795A"/>
-              <circle cx="34" cy="14" r="8" fill="#1D9E75" stroke="white" strokeWidth="2.5"/>
-              <path d="M30.5 14L33 16.5L37.5 11.5" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-            <div className="flex flex-col leading-none">
-              <span className="font-bold text-xl text-white tracking-tight">Wayside</span>
-              <span className="font-bold text-[9px] text-amber-porch tracking-[0.25em] uppercase">Admin Hub</span>
-            </div>
-          </div>
+          <Logo />
           
           <button
             onClick={() => setMenuOpen(true)}
@@ -1476,9 +1445,7 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
         ) : (
           <>
             {activeTab === 'dashboard' && renderDashboard()}
-            {activeTab === 'pipeline' && renderPipeline()}
             {activeTab === 'clients' && renderClients()}
-            {activeTab === 'analytics' && renderAnalytics()}
             {activeTab === 'dispatch' && renderDispatch()}
             {activeTab === 'action_center' && renderActionCenter()}
             {activeTab === 'inspections' && renderInspections()}

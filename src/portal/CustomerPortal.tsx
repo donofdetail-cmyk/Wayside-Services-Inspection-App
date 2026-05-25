@@ -3,6 +3,7 @@ import { supabase } from '../d2d/supabaseClient';
 import { Toaster, toast } from 'sonner';
 import { Loader2, Mail, FileText, CheckCircle2, LogOut, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Logo } from '../components/Logo';
 
 export default function CustomerPortal() {
   const [email, setEmail] = useState('');
@@ -79,14 +80,8 @@ export default function CustomerPortal() {
         <Toaster position="top-center" richColors />
         <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl p-8 border border-deep-forest/5 animate-in fade-in slide-in-from-bottom-4 duration-500">
           <div className="flex flex-col items-center mb-8">
-            <svg viewBox="0 0 48 48" className="w-12 h-12 mb-4 drop-shadow-[0_0_10px_rgba(29,158,117,0.3)]" fill="none">
-              <path d="M8 22L24 8L40 22V40C40 41.1 39.1 42 38 42H10C8.9 42 8 41.1 8 40V22Z" fill="#1D9E75"/>
-              <path d="M4 24L24 6L44 24" stroke="#1D9E75" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
-              <rect x="20" y="30" width="8" height="12" rx="1" fill="#16795A"/>
-              <circle cx="34" cy="14" r="8" fill="#1D9E75" stroke="white" strokeWidth="2.5"/>
-              <path d="M30.5 14L33 16.5L37.5 11.5" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-            <h1 className="text-2xl font-bold text-deep-forest tracking-tight">Wayside Customer Portal</h1>
+            <Logo className="scale-125 mb-4" darkText />
+            <h1 className="text-xl font-bold text-deep-forest tracking-tight mt-4">Customer Portal</h1>
             <p className="text-deep-forest/60 text-sm mt-1 text-center">Securely view your past inspection reports.</p>
           </div>
 
@@ -133,16 +128,7 @@ export default function CustomerPortal() {
       <Toaster position="top-center" richColors />
       <header className="bg-deep-forest text-white shadow-lg p-4 sticky top-0 z-20">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <svg viewBox="0 0 48 48" className="w-8 h-8 drop-shadow-[0_0_10px_rgba(29,158,117,0.3)]" fill="none">
-              <path d="M8 22L24 8L40 22V40C40 41.1 39.1 42 38 42H10C8.9 42 8 41.1 8 40V22Z" fill="#1D9E75"/>
-              <path d="M4 24L24 6L44 24" stroke="#1D9E75" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
-              <rect x="20" y="30" width="8" height="12" rx="1" fill="#16795A"/>
-              <circle cx="34" cy="14" r="8" fill="#1D9E75" stroke="white" strokeWidth="2.5"/>
-              <path d="M30.5 14L33 16.5L37.5 11.5" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-            <span className="font-bold text-lg tracking-tight">Customer Portal</span>
-          </div>
+          <Logo />
           <Button variant="ghost" onClick={handleLogout} className="text-white hover:bg-white/10 px-3 py-1.5 h-auto rounded-lg text-sm font-bold flex gap-2 items-center">
             <LogOut className="w-4 h-4 opacity-70" />
             Sign Out
