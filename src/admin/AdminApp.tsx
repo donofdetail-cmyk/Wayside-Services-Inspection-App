@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../d2d/supabaseClient';
 import { Toaster, toast } from 'sonner';
-import { Menu, LayoutDashboard, Users, ClipboardList, LogOut, Loader2, MapPin, Search, FileText, Download, X, Calendar as CalendarIcon, BarChart3, Inbox, Clock, Send, Settings, Kanban } from 'lucide-react';
+import { Menu, LayoutDashboard, Users, ClipboardList, LogOut, Loader2, MapPin, Search, FileText, Download, X, Calendar as CalendarIcon, BarChart3, Inbox, Clock, Send, Settings, Kanban, Mail, ChevronDown } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { format, parseISO, startOfWeek, addDays, isSameDay } from 'date-fns';
@@ -1126,65 +1126,141 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
     );
   };
 
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState<'technician' | 'rep' | 'admin'>('technician');
+  const [inviteLoading, setInviteLoading] = useState(false);
+
+  const handleInvite = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inviteEmail.trim()) return;
+    setInviteLoading(true);
+    try {
+      const { error } = await supabase.auth.admin.inviteUserByEmail(inviteEmail, {
+        data: { role: inviteRole },
+      });
+      if (error) throw error;
+      toast.success(`Invite sent to ${inviteEmail}!`);
+      setInviteEmail('');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to send invite');
+    } finally {
+      setInviteLoading(false);
+    }
+  };
+
   const renderTeam = () => (
-    <div className="bg-white rounded-2xl shadow-xl border border-deep-forest/5 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="p-6 border-b border-deep-forest/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <h3 className="text-xl font-bold text-deep-forest flex items-center gap-2">
-          <Users className="w-5 h-5 text-deep-forest" /> Team
-        </h3>
-      </div>
-      <div className="divide-y divide-deep-forest/5">
-        {profiles.map(profile => (
-          <div key={profile.id} className={`p-6 hover:bg-linen-white/30 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${profile.is_active === false ? 'opacity-50 grayscale' : ''}`}>
-            <div>
-              <div className="flex items-center gap-2">
-                <p className="font-bold text-deep-forest text-lg">{profile.full_name}</p>
-                {profile.is_active === false && (
-                  <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-600 text-[10px] font-bold uppercase tracking-wider">Deactivated</span>
-                )}
-              </div>
-              <p className="text-xs font-bold text-deep-forest/40 uppercase tracking-wide mt-1">Joined {new Date(profile.created_at).toLocaleDateString()}</p>
-            </div>
-            <div className="flex items-center gap-3">
-              <select
-                className="text-sm p-2 border border-deep-forest/20 rounded-lg bg-white font-bold text-deep-forest focus:outline-none disabled:opacity-50"
-                value={profile.role}
-                disabled={profile.is_active === false}
-                onChange={async (e) => {
-                  const newRole = e.target.value;
-                  const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', profile.id);
-                  if (error) toast.error('Failed to update role');
-                  else {
-                    toast.success('Role updated successfully');
-                    setProfiles(profiles.map(p => p.id === profile.id ? { ...p, role: newRole } : p));
-                  }
-                }}
-              >
-                <option value="technician">Technician</option>
-                <option value="rep">Sales Rep</option>
-                <option value="admin">Admin</option>
-              </select>
-              
-              <Button 
-                variant={profile.is_active === false ? "outline" : "ghost"}
-                className={`text-sm font-bold ${profile.is_active === false ? 'text-pathway-green border-pathway-green' : 'text-red-500 hover:bg-red-50'}`}
-                onClick={async () => {
-                  const newStatus = profile.is_active === false ? true : false;
-                  if (!newStatus && !confirm(`Are you sure you want to lock out ${profile.full_name}? They will instantly lose access.`)) return;
-                  
-                  const { error } = await supabase.from('profiles').update({ is_active: newStatus }).eq('id', profile.id);
-                  if (error) toast.error('Failed to update status');
-                  else {
-                    toast.success(newStatus ? 'Account Reactivated' : 'Account Deactivated');
-                    setProfiles(profiles.map(p => p.id === profile.id ? { ...p, is_active: newStatus } : p));
-                  }
-                }}
-              >
-                {profile.is_active === false ? 'Reactivate' : 'Deactivate'}
-              </Button>
-            </div>
+    <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+
+      {/* ── Invite Card ── */}
+      <div className="bg-white rounded-2xl shadow-xl border border-deep-forest/5 p-6">
+        <div className="flex items-center gap-3 mb-5">
+          <div className="w-10 h-10 rounded-xl bg-pathway-green/10 flex items-center justify-center">
+            <Send className="w-5 h-5 text-pathway-green" />
           </div>
-        ))}
+          <div>
+            <h3 className="text-lg font-bold text-deep-forest leading-none">Invite Team Member</h3>
+            <p className="text-xs text-deep-forest/50 mt-0.5">They'll receive an email to set their password and log in.</p>
+          </div>
+        </div>
+        <form onSubmit={handleInvite} className="flex flex-col sm:flex-row gap-3">
+          <div className="relative flex-1">
+            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-deep-forest/30 pointer-events-none" />
+            <input
+              type="email"
+              required
+              placeholder="teammate@example.com"
+              value={inviteEmail}
+              onChange={e => setInviteEmail(e.target.value)}
+              className="w-full pl-10 pr-4 py-3 rounded-xl border border-deep-forest/10 text-deep-forest text-sm focus:outline-none focus:border-pathway-green focus:ring-2 focus:ring-pathway-green/20 transition-all bg-linen-white/50"
+            />
+          </div>
+          <div className="relative">
+            <select
+              value={inviteRole}
+              onChange={e => setInviteRole(e.target.value as any)}
+              className="h-full pl-4 pr-10 py-3 appearance-none rounded-xl border border-deep-forest/10 text-deep-forest text-sm font-bold focus:outline-none focus:border-pathway-green focus:ring-2 focus:ring-pathway-green/20 transition-all bg-linen-white/50"
+            >
+              <option value="technician">Technician</option>
+              <option value="rep">Sales Rep</option>
+              <option value="admin">Admin</option>
+            </select>
+            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-deep-forest/40 pointer-events-none" />
+          </div>
+          <button
+            type="submit"
+            disabled={inviteLoading}
+            className="flex items-center justify-center gap-2 px-6 py-3 bg-pathway-green text-white rounded-xl font-bold text-sm hover:brightness-110 transition-all shadow-md shadow-pathway-green/20 disabled:opacity-50 shrink-0"
+          >
+            {inviteLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+            Send Invite
+          </button>
+        </form>
+      </div>
+
+      {/* ── Team Members List ── */}
+      <div className="bg-white rounded-2xl shadow-xl border border-deep-forest/5 overflow-hidden">
+        <div className="p-6 border-b border-deep-forest/10">
+          <h3 className="text-xl font-bold text-deep-forest flex items-center gap-2">
+            <Users className="w-5 h-5 text-deep-forest" /> Team Members
+            <span className="ml-2 bg-deep-forest/5 text-deep-forest px-3 py-1 rounded-full text-xs font-bold uppercase">{profiles.length} Total</span>
+          </h3>
+        </div>
+        <div className="divide-y divide-deep-forest/5">
+          {profiles.length === 0 && (
+            <div className="p-8 text-center text-deep-forest/50">No team members yet. Invite one above.</div>
+          )}
+          {profiles.map(profile => (
+            <div key={profile.id} className={`p-6 hover:bg-linen-white/30 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${profile.is_active === false ? 'opacity-50 grayscale' : ''}`}>
+              <div>
+                <div className="flex items-center gap-2">
+                  <p className="font-bold text-deep-forest text-lg">{profile.full_name}</p>
+                  {profile.is_active === false && (
+                    <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-600 text-[10px] font-bold uppercase tracking-wider">Deactivated</span>
+                  )}
+                </div>
+                <p className="text-xs font-bold text-deep-forest/40 uppercase tracking-wide mt-1">Joined {new Date(profile.created_at).toLocaleDateString()}</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <select
+                  className="text-sm p-2 border border-deep-forest/20 rounded-lg bg-white font-bold text-deep-forest focus:outline-none disabled:opacity-50"
+                  value={profile.role}
+                  disabled={profile.is_active === false}
+                  onChange={async (e) => {
+                    const newRole = e.target.value;
+                    const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', profile.id);
+                    if (error) toast.error('Failed to update role');
+                    else {
+                      toast.success('Role updated successfully');
+                      setProfiles(profiles.map(p => p.id === profile.id ? { ...p, role: newRole } : p));
+                    }
+                  }}
+                >
+                  <option value="technician">Technician</option>
+                  <option value="rep">Sales Rep</option>
+                  <option value="admin">Admin</option>
+                </select>
+                
+                <Button 
+                  variant={profile.is_active === false ? "outline" : "ghost"}
+                  className={`text-sm font-bold ${profile.is_active === false ? 'text-pathway-green border-pathway-green' : 'text-red-500 hover:bg-red-50'}`}
+                  onClick={async () => {
+                    const newStatus = profile.is_active === false ? true : false;
+                    if (!newStatus && !confirm(`Are you sure you want to lock out ${profile.full_name}? They will instantly lose access.`)) return;
+                    
+                    const { error } = await supabase.from('profiles').update({ is_active: newStatus }).eq('id', profile.id);
+                    if (error) toast.error('Failed to update status');
+                    else {
+                      toast.success(newStatus ? 'Account Reactivated' : 'Account Deactivated');
+                      setProfiles(profiles.map(p => p.id === profile.id ? { ...p, is_active: newStatus } : p));
+                    }
+                  }}
+                >
+                  {profile.is_active === false ? 'Reactivate' : 'Deactivate'}
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
