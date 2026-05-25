@@ -17,6 +17,7 @@ export default function D2DApp() {
   const [activeTab, setActiveTab] = useState<D2DTab>('map');
   const [logCoords, setLogCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [sessionStart] = useState(new Date());
+  const [menuOpen, setMenuOpen] = useState(false);
 
   // Restore session
   useEffect(() => {
@@ -39,11 +40,13 @@ export default function D2DApp() {
     setRepName(null);
     setLeads([]);
     setActiveTab('map');
+    setMenuOpen(false);
   };
 
   const handleLogDoor = useCallback((lat: number, lng: number) => {
     setLogCoords({ lat, lng });
     setActiveTab('log');
+    setMenuOpen(false);
   }, []);
 
   const handleSaveLead = async (leadData: Omit<D2DLead, 'id' | 'created_at'>) => {
@@ -78,6 +81,69 @@ export default function D2DApp() {
     <div className="min-h-screen bg-linen-white text-deep-forest font-sans flex flex-col">
       <Toaster position="top-center" richColors />
 
+      {/* ── Mobile Menu Overlay ── */}
+      {menuOpen && (
+        <div
+          className="fixed inset-0 z-50 flex md:hidden"
+          onClick={() => setMenuOpen(false)}
+        >
+          {/* Backdrop */}
+          <div className="flex-1 bg-black/40" />
+
+          {/* Drawer */}
+          <div
+            className="w-72 bg-deep-forest flex flex-col h-full shadow-2xl animate-in slide-in-from-right duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Drawer header */}
+            <div className="flex items-center justify-between px-5 py-5 border-b border-white/10">
+              <div className="flex flex-col">
+                <span className="text-[10px] uppercase font-bold text-white/40 tracking-wider">Signed in as</span>
+                <span className="text-base font-bold text-amber-porch">{repName}</span>
+              </div>
+              <button
+                onClick={() => setMenuOpen(false)}
+                className="text-white/40 hover:text-white transition-colors p-1"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Nav items */}
+            <div className="flex flex-col gap-1 px-3 py-4 flex-1">
+              {tabs.map(({ id, label, icon: Icon }) => (
+                <button
+                  key={id}
+                  onClick={() => { setActiveTab(id); setMenuOpen(false); }}
+                  className={`flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all text-sm font-semibold text-left relative ${
+                    activeTab === id ? 'bg-white/10 text-white' : 'text-white/80 hover:bg-white/10 hover:text-white'
+                  }`}
+                >
+                  <Icon className={`w-4 h-4 shrink-0 ${activeTab === id ? 'text-pathway-green' : 'text-white/50'}`} />
+                  {label}
+                  {id === 'stats' && leads.length > 0 && (
+                    <span className="ml-auto bg-amber-porch text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                      {leads.length}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+
+            {/* Logout */}
+            <div className="px-5 pb-8 pt-2 border-t border-white/10">
+              <button
+                onClick={handleLogout}
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-white/10 text-white/50 hover:text-white hover:border-white/30 transition-all text-sm font-bold"
+              >
+                <LogOut className="w-4 h-4" />
+                Log Out
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Header — matches inspection app exactly ── */}
       <header className="h-20 bg-deep-forest text-linen-white flex items-center px-4 md:px-8 shadow-md sticky top-0 z-10 w-full shrink-0">
         <div className="max-w-4xl w-full mx-auto flex items-center justify-between">
@@ -98,14 +164,24 @@ export default function D2DApp() {
 
           {/* Right side */}
           <div className="flex items-center gap-3">
-            {/* Doors badge */}
-            <div className="flex flex-col items-center bg-pathway-green px-3 py-1 rounded-xl shadow-inner">
-              <span className="text-[10px] uppercase font-bold text-white/80">Doors</span>
-              <span className="text-base font-bold leading-none text-white">{leads.length}</span>
+            {/* Desktop Nav Items */}
+            <div className="hidden md:flex items-center gap-1">
+              {tabs.map(({ id, label, icon: Icon }) => (
+                <button
+                  key={id}
+                  onClick={() => setActiveTab(id)}
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-xl transition-colors text-xs font-bold uppercase relative ${
+                    activeTab === id ? 'text-white bg-white/10' : 'text-white/60 hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  <Icon className={`w-4 h-4 ${activeTab === id ? 'text-pathway-green' : ''}`} />
+                  {label}
+                </button>
+              ))}
             </div>
 
             {/* Divider */}
-            <div className="hidden md:block h-8 w-[1px] bg-white/20" />
+            <div className="hidden md:block h-8 w-[1px] bg-white/20 mx-1" />
 
             {/* Rep name + logout */}
             <div className="hidden md:flex items-center gap-3">
@@ -120,20 +196,27 @@ export default function D2DApp() {
               </div>
             </div>
 
-            {/* Mobile logout */}
-            <button
-              onClick={handleLogout}
-              className="md:hidden w-10 h-10 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/60 hover:text-white transition-all"
-              title="Log out"
-            >
-              <LogOut className="w-5 h-5" />
-            </button>
+            {/* Mobile: doors pill + hamburger menu */}
+            <div className="flex items-center gap-2 md:hidden">
+              {leads.length > 0 && (
+                <div className="flex flex-col items-center bg-pathway-green px-3 py-1 rounded-xl shadow-inner">
+                  <span className="text-[10px] uppercase font-bold text-white/80">Doors</span>
+                  <span className="text-base font-bold leading-none text-white">{leads.length}</span>
+                </div>
+              )}
+              <button
+                onClick={() => setMenuOpen(true)}
+                className="relative flex items-center justify-center w-10 h-10 rounded-xl bg-white/10 hover:bg-white/20 transition-all text-white"
+                aria-label="Open menu"
+              >
+                <Menu className="w-5 h-5" />
+              </button>
+            </div>
           </div>
         </div>
       </header>
 
-      {/* ── Content ── */}
-      <div className="flex-1 flex flex-col overflow-hidden" style={{ height: 'calc(100vh - 80px - 64px)' }}>
+      <div className="flex-1 flex flex-col overflow-hidden">
 
         {/* Map — full bleed, no padding */}
         {activeTab === 'map' && (
@@ -195,37 +278,6 @@ export default function D2DApp() {
           </div>
         )}
       </div>
-
-      {/* ── Bottom Tab Bar ── */}
-      <nav className="shrink-0 bg-white border-t border-deep-forest/10 flex items-stretch h-16 z-10 shadow-[0_-1px_0_rgba(27,58,45,0.06)]">
-        {tabs.map(({ id, label, icon: Icon }) => {
-          const isActive = activeTab === id;
-          return (
-            <button
-              key={id}
-              onClick={() => setActiveTab(id)}
-              className={`flex-1 flex flex-col items-center justify-center gap-1 transition-all ${
-                isActive ? 'text-pathway-green' : 'text-deep-forest/30 hover:text-deep-forest/60'
-              }`}
-            >
-              <div className="relative">
-                <Icon className={`w-5 h-5 transition-transform ${isActive ? 'scale-110' : ''}`} />
-                {id === 'log' && (
-                  <span className="absolute -top-1 -right-1 w-2 h-2 bg-pathway-green rounded-full" />
-                )}
-                {id === 'stats' && leads.length > 0 && (
-                  <span className="absolute -top-1.5 -right-2.5 text-[9px] font-black text-amber-porch">
-                    {leads.length}
-                  </span>
-                )}
-              </div>
-              <span className={`text-[10px] font-bold uppercase tracking-wide ${isActive ? 'text-pathway-green' : 'text-deep-forest/30'}`}>
-                {label}
-              </span>
-            </button>
-          );
-        })}
-      </nav>
     </div>
   );
 }
