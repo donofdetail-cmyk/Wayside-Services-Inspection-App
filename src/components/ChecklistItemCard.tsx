@@ -1,3 +1,4 @@
+import React from 'react';
 import { useRef, useState } from 'react';
 import { Camera, Plus, Trash2, X, Edit3, Upload } from 'lucide-react';
 import { InspectionStatus, Room } from '../types';
@@ -15,6 +16,7 @@ interface ChecklistItemCardProps {
   rooms?: Room[];
   seasonalTaskName?: string;
   onUpdate: (field: string, value: any) => void;
+  key?: any;
 }
 
 export function ChecklistItemCard({
@@ -92,7 +94,7 @@ export function ChecklistItemCard({
     const timestamp = new Date().toLocaleString();
     const watermarkText = locationStr ? `${timestamp} | ${locationStr}` : timestamp;
 
-    const resizers = files.map(file => resizeImage(file, watermarkText));
+    const resizers = files.map((file: any) => resizeImage(file, watermarkText));
     Promise.all(resizers).then((newUrls) => {
       onUpdate('photoUrls', [...photoUrls, ...newUrls]);
     });

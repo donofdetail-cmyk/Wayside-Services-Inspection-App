@@ -1,3 +1,4 @@
+import React from 'react';
 import { useState } from 'react';
 import { ChevronDown, ChevronUp, Home } from 'lucide-react';
 
@@ -73,7 +74,7 @@ const OBJECTIONS = [
   },
 ];
 
-function ObjectionCard({ q, a }: { q: string; a: string }) {
+function ObjectionCard({ q, a }: { q: string; a: string; key?: string | number }) {
   const [open, setOpen] = useState(false);
   return (
     <div className={`bg-white rounded-2xl border transition-all ${open ? 'border-pathway-green/30' : 'border-deep-forest/10'}`}>
@@ -156,7 +157,7 @@ export function PitchGuide() {
         <div className="flex flex-col gap-3 animate-in fade-in duration-200">
           <p className="text-[11px] italic text-deep-forest/40">Tap any objection for a scripted response.</p>
           {OBJECTIONS.map((o, i) => (
-            <ObjectionCard key={i} {...o} />
+            <ObjectionCard key={i} q={o.q} a={o.a} />
           ))}
         </div>
       )}

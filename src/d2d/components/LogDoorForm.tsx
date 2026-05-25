@@ -1,3 +1,4 @@
+import React from 'react';
 import { useState, useEffect } from 'react';
 import { D2DLead, LeadStatus, PricingTier, PRICING_TIERS } from '../types';
 import { Loader2, MapPin } from 'lucide-react';

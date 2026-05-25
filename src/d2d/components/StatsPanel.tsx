@@ -1,3 +1,4 @@
+import React from 'react';
 import { useEffect, useState, useRef } from 'react';
 import { D2DLead, STATUS_COLORS, STATUS_LABELS } from '../types';
 import { DoorOpen, ThumbsUp, TrendingUp, PhoneCall, CalendarCheck, Clock } from 'lucide-react';

@@ -1,3 +1,4 @@
+import React from 'react';
 import { useRef, useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Eraser } from 'lucide-react';

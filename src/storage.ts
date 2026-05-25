@@ -95,14 +95,14 @@ export async function saveCompletedInspection(
       client_name: record.clientInfo.clientName,
       client_email: record.clientInfo.clientEmail || null,
       property_address: record.clientInfo.propertyAddress,
-      client_phone: record.clientInfo.clientPhone || null,
+      client_phone: (record.clientInfo as any).clientPhone || null,
       client_info: record.clientInfo as any,
       checklist_data: record.checklist as any,
       created_at: record.completedAt,
       pdf_url: pdfUrl,
       duration_seconds: durationSeconds,
-      client_signature: record.clientSignature || null,
-      technician_signature: record.technicianSignature || null
+      client_signature: (record as any).clientSignature || null,
+      technician_signature: (record as any).technicianSignature || null
     };
 
     const { error } = await supabase.from('inspections').insert([supabaseRecord]);
@@ -113,7 +113,7 @@ export async function saveCompletedInspection(
       await supabase.from('client_touchpoints').insert([{
         client_name: record.clientInfo.clientName,
         client_email: record.clientInfo.clientEmail || null,
-        client_phone: record.clientInfo.clientPhone || null,
+        client_phone: (record.clientInfo as any).clientPhone || null,
         property_address: record.clientInfo.propertyAddress,
         campaign_type: '6_month_seasonal',
         scheduled_for: sixMonths.toISOString()

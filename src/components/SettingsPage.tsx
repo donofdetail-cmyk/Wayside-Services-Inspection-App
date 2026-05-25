@@ -1,3 +1,4 @@
+import React from 'react';
 import { useState, useEffect } from 'react';
 import { loadTemplate, saveTemplate, loadHistory, clearDraft } from '../storage';
 import { DEFAULT_CHECKLIST_ITEMS } from '../types';

@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ClientData, ChecklistItemData, InspectionReport, InspectionDraft } from './types';
 import { ChecklistItemCard } from './components/ChecklistItemCard';
 import { TimerBadge } from './components/TimerBadge';
 import { HistoryDashboard } from './components/HistoryDashboard';
 import { SettingsPage } from './components/SettingsPage';
+import { TimeClockWidget } from './components/TimeClockWidget';
 import { generateAndDownloadPDF } from './pdfGenerator';
 import { AuthLogin } from './components/AuthLogin';
 import { supabase } from './d2d/supabaseClient';
@@ -426,6 +427,13 @@ export default function App({ session, profile }: { session: any, profile: any }
               </div>
             )}
 
+            {/* Time Clock */}
+            {profile?.id && (
+              <div className="px-5 pt-4 pb-2 border-t border-white/10">
+                <TimeClockWidget userId={profile.id} />
+              </div>
+            )}
+
             {/* Logout */}
             <div className="px-5 pb-8 pt-2">
               <button
@@ -458,7 +466,7 @@ export default function App({ session, profile }: { session: any, profile: any }
                   <div className="flex flex-col items-center bg-pathway-green px-3 py-1 rounded-xl shadow-inner">
                     <span className="text-[10px] uppercase font-bold text-white/80">Progress</span>
                     <span className="text-base font-bold leading-none text-white">
-                      {Math.round((Object.values(checklistData).filter(i => i && i.status).length / templateItems.length) * 100)}%
+                      {Math.round((Object.values(checklistData).filter((i: any) => i && i.status).length / templateItems.length) * 100)}%
                     </span>
                   </div>
                 )}
@@ -527,7 +535,7 @@ export default function App({ session, profile }: { session: any, profile: any }
                     <div className="flex flex-col items-center bg-pathway-green px-3 py-1 rounded-xl shadow-inner">
                       <span className="text-[10px] uppercase font-bold text-white/80">Progress</span>
                       <span className="text-base font-bold leading-none text-white">
-                        {Math.round((Object.values(checklistData).filter(i => i && i.status).length / templateItems.length) * 100)}%
+                        {Math.round((Object.values(checklistData).filter((i: any) => i && i.status).length / templateItems.length) * 100)}%
                       </span>
                     </div>
                     <TimerBadge formatted={formattedTime} />

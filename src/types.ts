@@ -62,3 +62,66 @@ export interface CompletedInspection {
   completedAt: string;     // ISO timestamp
   durationSeconds: number; // total time on-site
 }
+
+// --- D2D Route Optimization OS Types ---
+
+export interface TerritoryZone {
+  id: string;
+  name: string;
+  color: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface Customer {
+  id: string;
+  full_name: string;
+  email?: string;
+  phone?: string;
+  created_at: string;
+}
+
+export interface Property {
+  id: string;
+  address: string;
+  lat?: number;
+  lng?: number;
+  territory_zone_id?: string;
+  created_at: string;
+}
+
+export interface ServiceAgreement {
+  id: string;
+  property_id: string;
+  customer_id: string;
+  originated_by_rep_id?: string;
+  recurring_price: number;
+  frequency: string;
+  status: 'active' | 'paused' | 'cancelled';
+  created_at: string;
+}
+
+export interface ServiceTicket {
+  id: string;
+  agreement_id: string;
+  scheduled_start?: string;
+  scheduled_end?: string;
+  completed_at?: string;
+  status: 'pending' | 'in_progress' | 'completed' | 'cancelled';
+  assigned_tech_id?: string;
+  type: 'initial' | 'recurring' | 'seasonal' | 'repair';
+  notes?: string;
+  created_at: string;
+}
+
+export interface TimeEntry {
+  id: string;
+  user_id: string;
+  clock_in_time: string;
+  clock_out_time?: string;
+  duration_minutes?: number;
+  location_in?: string;
+  location_out?: string;
+  status: 'clocked_in' | 'clocked_out';
+  created_at: string;
+}

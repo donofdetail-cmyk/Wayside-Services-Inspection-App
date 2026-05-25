@@ -1,3 +1,4 @@
+import React from 'react';
 import { useState, useMemo, useEffect } from 'react';
 import { CompletedInspection } from '../types';
 import { deleteHistoryRecord, loadHistory, syncOfflineInspections } from '../storage';
@@ -77,7 +78,7 @@ export function HistoryDashboard({ onBack }: HistoryDashboardProps) {
     records.forEach((r) => {
       const items = Object.values(r.checklist);
       totalItems += items.length;
-      passItems += items.filter((i) => i.status === 'Pass').length;
+      passItems += items.filter((i: any) => i.status === 'Pass').length;
     });
     const passRate = totalItems > 0 ? Math.round((passItems / totalItems) * 100) : 0;
 

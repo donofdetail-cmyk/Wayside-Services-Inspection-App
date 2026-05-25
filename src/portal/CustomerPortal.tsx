@@ -1,3 +1,4 @@
+import React from 'react';
 import { useState, useEffect } from 'react';
 import { supabase } from '../d2d/supabaseClient';
 import { Toaster, toast } from 'sonner';

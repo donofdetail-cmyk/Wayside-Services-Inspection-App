@@ -4,6 +4,7 @@ import { supabase } from './supabaseClient';
 import { MapView } from './components/MapView';
 import { LogDoorForm } from './components/LogDoorForm';
 import { PitchGuide } from './components/PitchGuide';
+import { TimeClockWidget } from '../components/TimeClockWidget';
 import { StatsPanel } from './components/StatsPanel';
 import { D2DLead } from './types';
 import { saveLeadToSupabase, loadTodaysLeads, syncOfflineLeads } from './storage';
@@ -136,8 +137,15 @@ export default function D2DApp({ session, profile }: { session: any, profile: an
               ))}
             </div>
 
+            {/* Time Clock */}
+            {repId && (
+              <div className="px-5 pt-4 pb-2 border-t border-white/10">
+                <TimeClockWidget userId={repId} />
+              </div>
+            )}
+
             {/* Logout */}
-            <div className="px-5 pb-8 pt-2 border-t border-white/10">
+            <div className="px-5 pb-8 pt-2">
               <button
                 onClick={handleLogout}
                 className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-white/10 text-white/50 hover:text-white hover:border-white/30 transition-all text-sm font-bold"
