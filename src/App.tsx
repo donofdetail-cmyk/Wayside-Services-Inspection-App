@@ -19,7 +19,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Loader2, CheckCircle2, AlertCircle, History, ClipboardList, Menu, X, LogOut, Settings, User, Lock, Mail, MapPin, Calendar } from 'lucide-react';
 
-type Step = 'login' | 'dashboard' | 'client_info' | 'checklist' | 'history' | 'settings' | 'generating' | 'success' | 'error';
+type Step = 'dashboard' | 'client_info' | 'checklist' | 'history' | 'settings' | 'generating' | 'success' | 'error';
 
 const EMPTY_CLIENT: ClientData = {
   clientName: '',
@@ -30,8 +30,8 @@ const EMPTY_CLIENT: ClientData = {
   technicianId: '',
 };
 
-export default function App() {
-  const [step, setStep] = useState<Step>('login');
+export default function App({ session, profile }: { session: any, profile: any }) {
+  const [step, setStep] = useState<Step>('dashboard');
   const [menuOpen, setMenuOpen] = useState(false);
   const [templateItems, setTemplateItems] = useState<string[]>([]);
   const [historyCount, setHistoryCount] = useState(0);
@@ -134,12 +134,9 @@ export default function App() {
 
   // ── On mount: restore auth, check for draft ───────────────────────────────
   useEffect(() => {
-    const storedName = localStorage.getItem('wayside_technician_name');
-    const storedId = localStorage.getItem('wayside_technician_id');
-    if (storedName && storedId) {
-      setClientData(prev => ({ ...prev, technicianName: storedName, technicianId: storedId }));
-      setStep('dashboard');
-      fetchScheduledJobs(storedId);
+    if (profile) {
+      setClientData(prev => ({ ...prev, technicianName: profile.full_name, technicianId: profile.id }));
+      fetchScheduledJobs(profile.id);
       loadDraft().then(saved => {
         if (saved) {
           setDraft(saved);
@@ -160,7 +157,7 @@ export default function App() {
     }
 
     return () => clearInterval(syncInterval);
-  }, []);
+  }, [profile]);
 
   // ── Supabase Realtime Subscriptions ────────────────────────────────────────
   useEffect(() => {
@@ -357,31 +354,6 @@ export default function App() {
   };
 
   // ── Render ────────────────────────────────────────────────────────────────
-  if (step === 'login') {
-    return (
-      <AuthLogin
-        onLogin={(session, profile) => {
-          setClientData(prev => ({ ...prev, technicianName: profile.full_name, technicianId: profile.id }));
-          localStorage.setItem('wayside_technician_name', profile.full_name);
-          localStorage.setItem('wayside_technician_id', profile.id);
-          setStep('dashboard');
-          fetchScheduledJobs(profile.id);
-          // Check for draft
-          loadDraft().then(saved => {
-            if (saved) {
-              setDraft(saved);
-              setShowResumeBanner(true);
-            }
-          });
-        }}
-        requiredRole="technician"
-        title="Technician Login"
-        subtitle="Sign in to access your inspections."
-        altLinkText="Sales rep? Switch to D2D Portal"
-        altLinkHref="/d2d"
-      />
-    );
-  }
 
   return (
     <div className="min-h-screen bg-linen-white text-deep-forest pb-20 font-sans">

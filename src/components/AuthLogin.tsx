@@ -1,21 +1,19 @@
-import { useState } from 'react';
-import { Mail, Lock, User, Loader2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Mail, Lock, User, Loader2, ChevronDown } from 'lucide-react';
 import { supabase } from '../d2d/supabaseClient';
 
+export type PortalType = 'technician' | 'rep' | 'admin';
+
 interface Props {
-  onLogin: (session: any, profile: any) => void;
-  requiredRole: 'technician' | 'rep' | 'admin';
-  title: string;
-  subtitle: string;
-  altLinkText: string;
-  altLinkHref: string;
+  onLogin: (session: any, profile: any, portal: PortalType) => void;
 }
 
-export function AuthLogin({ onLogin, requiredRole, title, subtitle, altLinkText, altLinkHref }: Props) {
+export function AuthLogin({ onLogin }: Props) {
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
+  const [selectedPortal, setSelectedPortal] = useState<PortalType>('technician');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -32,7 +30,7 @@ export function AuthLogin({ onLogin, requiredRole, title, subtitle, altLinkText,
           options: {
             data: {
               full_name: fullName,
-              role: requiredRole,
+              role: selectedPortal,
             },
           },
         });
@@ -50,7 +48,7 @@ export function AuthLogin({ onLogin, requiredRole, title, subtitle, altLinkText,
             await supabase.auth.signOut();
             throw new Error(`Your account has been deactivated. Please contact an administrator.`);
           }
-          onLogin(data.session, profile);
+          onLogin(data.session, profile, selectedPortal);
         } else {
           setError('Account created. Check your email to verify (if enabled), or try logging in.');
           setIsSignUp(false);
@@ -78,12 +76,12 @@ export function AuthLogin({ onLogin, requiredRole, title, subtitle, altLinkText,
             throw new Error(`Your account has been deactivated. Please contact an administrator.`);
           }
 
-          if (profile.role !== requiredRole && profile.role !== 'admin') {
+          if (profile.role !== selectedPortal && profile.role !== 'admin') {
             await supabase.auth.signOut();
-            throw new Error(`Unauthorized. This portal requires ${requiredRole} access.`);
+            throw new Error(`Unauthorized. This portal requires ${selectedPortal} access.`);
           }
 
-          onLogin(data.session, profile);
+          onLogin(data.session, profile, selectedPortal);
         }
       }
     } catch (err: any) {
@@ -118,8 +116,24 @@ export function AuthLogin({ onLogin, requiredRole, title, subtitle, altLinkText,
           <div className="bg-white rounded-2xl shadow-xl p-8">
             <form onSubmit={handleSubmit} className="flex flex-col gap-5">
               <div>
-                <h2 className="text-lg font-bold text-deep-forest">{isSignUp ? 'Create Account' : title}</h2>
-                <p className="text-xs text-deep-forest/70 mt-1">{isSignUp ? 'Sign up to continue.' : subtitle}</p>
+                <h2 className="text-lg font-bold text-deep-forest">{isSignUp ? 'Create Account' : 'Welcome to Wayside'}</h2>
+                <p className="text-xs text-deep-forest/70 mt-1">{isSignUp ? 'Sign up to continue.' : 'Please sign in to access your portal.'}</p>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold uppercase text-deep-forest/50 block mb-1.5">Select Portal</label>
+                <div className="relative">
+                  <select
+                    value={selectedPortal}
+                    onChange={(e) => setSelectedPortal(e.target.value as PortalType)}
+                    className="w-full pl-4 pr-10 py-3 appearance-none rounded-xl border border-deep-forest/10 text-deep-forest text-sm font-bold focus:outline-none focus:border-pathway-green focus:ring-2 focus:ring-pathway-green/20 transition-all bg-linen-white/50"
+                  >
+                    <option value="technician">Technician Portal</option>
+                    <option value="rep">Sales Rep Portal</option>
+                    <option value="admin">Admin Dashboard</option>
+                  </select>
+                  <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-deep-forest/40 pointer-events-none" />
+                </div>
               </div>
 
               {error && (
@@ -192,12 +206,6 @@ export function AuthLogin({ onLogin, requiredRole, title, subtitle, altLinkText,
               </button>
             </form>
           </div>
-
-          <p className="text-center mt-5 text-deep-forest/40 text-xs">
-            <a href={altLinkHref} className="text-pathway-green hover:underline font-semibold">
-              {altLinkText}
-            </a>
-          </p>
         </div>
       </main>
     </div>

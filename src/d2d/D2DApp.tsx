@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { AuthLogin } from '../components/AuthLogin';
+
 import { supabase } from './supabaseClient';
 import { MapView } from './components/MapView';
 import { LogDoorForm } from './components/LogDoorForm';
@@ -12,9 +12,9 @@ import { Toaster, toast } from 'sonner';
 
 type D2DTab = 'map' | 'log' | 'pitch' | 'stats';
 
-export default function D2DApp() {
-  const [repName, setRepName] = useState<string | null>(null);
-  const [repId, setRepId] = useState<string | null>(null);
+export default function D2DApp({ session, profile }: { session: any, profile: any }) {
+  const [repName, setRepName] = useState<string | null>(profile?.full_name || null);
+  const [repId, setRepId] = useState<string | null>(profile?.id || null);
   const [leads, setLeads] = useState<D2DLead[]>([]);
   const [activeTab, setActiveTab] = useState<D2DTab>('map');
   const [logCoords, setLogCoords] = useState<{ lat: number; lng: number } | null>(null);
@@ -23,13 +23,12 @@ export default function D2DApp() {
 
   // Restore session
   useEffect(() => {
-    const savedName = localStorage.getItem('d2d_rep_name');
-    const savedId = localStorage.getItem('d2d_rep_id');
-    if (savedName && savedId) {
-      setRepName(savedName);
-      setRepId(savedId);
+    if (profile) {
+      setRepName(profile.full_name);
+      setRepId(profile.id);
+      loadTodaysLeads(profile.full_name).then(setLeads).catch(() => toast.error('Could not load leads'));
     }
-  }, []);
+  }, [profile]);
 
   // Load today's leads when rep logs in
   useEffect(() => {
@@ -43,12 +42,7 @@ export default function D2DApp() {
     return () => clearInterval(syncInterval);
   }, [repName]);
 
-  const handleLogin = (session: any, profile: any) => {
-    localStorage.setItem('d2d_rep_name', profile.full_name);
-    localStorage.setItem('d2d_rep_id', profile.id);
-    setRepName(profile.full_name);
-    setRepId(profile.id);
-  };
+
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -79,21 +73,7 @@ export default function D2DApp() {
     }
   };
 
-  if (!repName) {
-    return (
-      <>
-        <Toaster position="top-center" richColors />
-        <AuthLogin
-          onLogin={handleLogin}
-          requiredRole="rep"
-          title="Sales Portal"
-          subtitle="Sign in to access your territory."
-          altLinkText="Inspector? Switch to Inspection App"
-          altLinkHref="/"
-        />
-      </>
-    );
-  }
+
 
   const tabs = [
     { id: 'map' as D2DTab, label: 'Map', icon: MapPin },

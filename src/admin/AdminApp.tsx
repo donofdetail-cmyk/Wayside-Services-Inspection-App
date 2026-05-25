@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { AuthLogin } from '../components/AuthLogin';
 import { supabase } from '../d2d/supabaseClient';
 import { Toaster, toast } from 'sonner';
 import { Menu, LayoutDashboard, Users, ClipboardList, LogOut, Loader2, MapPin, Search, FileText, Download, X, Calendar as CalendarIcon, BarChart3, Inbox, Clock, Send, Settings, Kanban } from 'lucide-react';
@@ -10,8 +9,8 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveCont
 
 type AdminTab = 'dashboard' | 'clients' | 'pipeline' | 'analytics' | 'dispatch' | 'action_center' | 'inspections' | 'leads' | 'team' | 'settings';
 
-export default function AdminApp() {
-  const [adminName, setAdminName] = useState<string | null>(null);
+export default function AdminApp({ session, profile }: { session: any, profile: any }) {
+  const [adminName, setAdminName] = useState<string | null>(profile?.full_name || null);
   const [activeTab, setActiveTab] = useState<AdminTab>('dashboard');
   const [menuOpen, setMenuOpen] = useState(false);
   const [touchpoints, setTouchpoints] = useState<any[]>([]);
@@ -37,14 +36,10 @@ export default function AdminApp() {
   };
 
   useEffect(() => {
-    const savedName = localStorage.getItem('wayside_admin_name');
-    if (savedName) setAdminName(savedName);
-  }, []);
-
-  const handleLogin = (session: any, profile: any) => {
-    localStorage.setItem('wayside_admin_name', profile.full_name);
-    setAdminName(profile.full_name);
-  };
+    if (profile) {
+      setAdminName(profile.full_name);
+    }
+  }, [profile]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -138,21 +133,7 @@ export default function AdminApp() {
     };
   }, [adminName]);
 
-  if (!adminName) {
-    return (
-      <div className="min-h-screen bg-linen-white text-deep-forest font-sans">
-        <Toaster position="top-center" richColors />
-        <AuthLogin
-          onLogin={handleLogin}
-          requiredRole="admin"
-          title="Admin Portal"
-          subtitle="Sign in to oversee operations."
-          altLinkText="Technician? Switch to Inspection App"
-          altLinkHref="/"
-        />
-      </div>
-    );
-  }
+
 
   const renderDashboard = () => {
     const totalLeads = leads.length;
