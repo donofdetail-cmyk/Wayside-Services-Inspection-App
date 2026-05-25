@@ -137,7 +137,20 @@ export async function syncOfflineInspections(): Promise<void> {
   for (const record of queue) {
     const { error } = await supabase.from('inspections').insert([record]);
     if (error) {
+      console.error('Failed to sync offline record:', record.id, error);
       remaining.push(record);
+    } else {
+      // Create the touchpoint upon successful sync
+      const sixMonths = new Date();
+      sixMonths.setMonth(sixMonths.getMonth() + 6);
+      await supabase.from('client_touchpoints').insert([{
+        client_name: record.client_name,
+        client_email: record.client_email,
+        client_phone: record.client_phone,
+        property_address: record.property_address,
+        campaign_type: '6_month_seasonal',
+        scheduled_for: sixMonths.toISOString()
+      }]);
     }
   }
   await set(OFFLINE_INSPECTIONS_KEY, remaining);

@@ -1,8 +1,9 @@
 import { useState, useMemo, useEffect } from 'react';
 import { CompletedInspection } from '../types';
-import { deleteHistoryRecord, loadHistory } from '../storage';
+import { deleteHistoryRecord, loadHistory, syncOfflineInspections } from '../storage';
 import { generateAndDownloadPDF } from '../pdfGenerator';
 import { loadTemplate } from '../storage';
+import { get } from 'idb-keyval';
 import {
   Search,
   Trash2,
@@ -12,6 +13,8 @@ import {
   CheckCircle2,
   AlertCircle,
   XCircle,
+  CloudOff,
+  RefreshCw
 } from 'lucide-react';
 
 interface HistoryDashboardProps {
@@ -46,12 +49,21 @@ function getStatusCounts(record: CompletedInspection) {
 
 export function HistoryDashboard({ onBack }: HistoryDashboardProps) {
   const [records, setRecords] = useState<CompletedInspection[]>([]);
+  const [pendingSyncIds, setPendingSyncIds] = useState<string[]>([]);
   const [query, setQuery] = useState('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const fetchHistoryAndQueue = async () => {
+    const hist = await loadHistory();
+    setRecords(hist);
+    const queue = (await get<any[]>('wayside_offline_inspections')) || [];
+    setPendingSyncIds(queue.map(q => q.id));
+  };
 
   useEffect(() => {
-    loadHistory().then(setRecords);
+    fetchHistoryAndQueue();
   }, []);
 
   // ── Stats ────────────────────────────────────────────────────────────────
@@ -88,7 +100,7 @@ export function HistoryDashboard({ onBack }: HistoryDashboardProps) {
   const handleDelete = async (id: string) => {
     if (deletingId === id) {
       await deleteHistoryRecord(id);
-      setRecords(await loadHistory());
+      await fetchHistoryAndQueue();
       setDeletingId(null);
     } else {
       setDeletingId(id);
@@ -123,6 +135,21 @@ export function HistoryDashboard({ onBack }: HistoryDashboardProps) {
           </h2>
           <p className="text-deep-forest/60 text-xs mt-0.5">All completed inspections for this device</p>
         </div>
+        {pendingSyncIds.length > 0 && (
+          <button 
+            onClick={async () => {
+              setIsSyncing(true);
+              await syncOfflineInspections();
+              await fetchHistoryAndQueue();
+              setIsSyncing(false);
+            }}
+            disabled={isSyncing}
+            className="ml-auto bg-amber-porch text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 hover:brightness-110 disabled:opacity-50 transition-all"
+          >
+            <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+            {isSyncing ? 'Syncing...' : `Sync ${pendingSyncIds.length} Pending`}
+          </button>
+        )}
       </div>
 
       {/* ── Stats Strip ── */}
@@ -206,6 +233,11 @@ export function HistoryDashboard({ onBack }: HistoryDashboardProps) {
                   <p className="text-[10px] text-deep-forest/40 mt-1">
                     {record.clientInfo.technicianName} · {formatDate(record.completedAt)}
                   </p>
+                  {pendingSyncIds.includes(record.id) && (
+                    <span className="inline-flex items-center gap-1 bg-amber-porch/10 text-amber-porch text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full mt-2 self-start">
+                      <CloudOff className="w-3 h-3" /> Pending Sync
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
                   <span className="flex items-center gap-1 text-[10px] font-bold text-deep-forest/50 bg-linen-white px-2 py-1 rounded-lg">
