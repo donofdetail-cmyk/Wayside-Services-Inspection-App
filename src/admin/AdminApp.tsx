@@ -26,7 +26,7 @@ export default function AdminApp() {
   const [selectedLead, setSelectedLead] = useState<any | null>(null);
   const [selectedClient, setSelectedClient] = useState<any | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [companySettings, setCompanySettings] = useState<any>(null);
+  const [messageTemplates, setMessageTemplates] = useState<{id: string, name: string, type: 'sms'|'email', content: string}[]>([]);
   const [templates, setTemplates] = useState<any[]>([]);
 
   const formatSeconds = (s: number) => {
@@ -58,11 +58,20 @@ export default function AdminApp() {
     async function fetchData() {
       setLoading(true);
       try {
-        const [inspectionsRes, leadsRes, profilesRes, settingsRes, templatesRes, touchpointsRes, notesRes, commsRes] = await Promise.all([
+        const savedTemplates = localStorage.getItem('wayside_message_templates');
+        if (savedTemplates) {
+          setMessageTemplates(JSON.parse(savedTemplates));
+        } else {
+          setMessageTemplates([
+            { id: '1', name: 'D2D Not Home Follow-up', type: 'sms', content: 'Hi {{name}}, sorry we missed you! We are doing free roof inspections in {{neighborhood}} this week. Reply YES to book a slot.' },
+            { id: '2', name: 'Post-Inspection Review', type: 'email', content: 'Hi {{name}}, thanks for choosing Wayside Services! Could you take 30 seconds to leave us a review?' },
+            { id: '3', name: '6-Month Seasonal Nurture', type: 'email', content: 'Hi {{name}}, the seasons are changing! It’s a great time for a quick maintenance check on your property at {{address}}.' }
+          ]);
+        }
+        const [inspectionsRes, leadsRes, profilesRes, templatesRes, touchpointsRes, notesRes, commsRes] = await Promise.all([
           supabase.from('inspections').select('*').order('created_at', { ascending: false }),
           supabase.from('d2d_leads').select('*').order('created_at', { ascending: false }),
           supabase.from('profiles').select('*').order('created_at', { ascending: true }),
-          supabase.from('company_settings').select('*').single(),
           supabase.from('inspection_templates').select('*').order('order_index', { ascending: true }),
           supabase.from('client_touchpoints').select('*').order('scheduled_for', { ascending: true }),
           supabase.from('client_notes').select('*').order('created_at', { ascending: false }),
@@ -1215,29 +1224,29 @@ export default function AdminApp() {
         </h3>
       </div>
       <div className="bg-white rounded-2xl shadow-xl border border-deep-forest/5 p-6">
-        <h3 className="text-xl font-bold text-deep-forest mb-4">Company Profile</h3>
-        <div className="grid gap-4 max-w-md">
-          <div>
-            <label className="text-xs font-bold text-deep-forest/50 uppercase tracking-wider mb-1 block">Company Name</label>
-            <Input 
-              value={companySettings?.company_name || ''} 
-              onChange={e => setCompanySettings({...companySettings, company_name: e.target.value})}
-              className="font-bold border-deep-forest/20 focus-visible:ring-pathway-green"
-            />
-          </div>
-          <Button 
-            className="w-full bg-pathway-green hover:brightness-110 text-white font-bold"
-            onClick={async () => {
-              if (companySettings.id) {
-                await supabase.from('company_settings').update({ company_name: companySettings.company_name }).eq('id', companySettings.id);
-              } else {
-                await supabase.from('company_settings').insert([{ company_name: companySettings.company_name }]);
-              }
-              toast.success('Company settings saved!');
-            }}
-          >
-            Save Profile
-          </Button>
+        <h3 className="text-xl font-bold text-deep-forest mb-1">Omnichannel Message Templates</h3>
+        <p className="text-sm text-deep-forest/60 mb-6">Manage the default SMS and Email templates used by the CRM Action Center.</p>
+        
+        <div className="grid gap-4 max-w-3xl">
+          {messageTemplates.map(tpl => (
+            <div key={tpl.id} className="border border-deep-forest/10 rounded-xl p-4 bg-linen-white/30">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="font-bold text-deep-forest">{tpl.name}</h4>
+                <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded ${tpl.type === 'sms' ? 'bg-amber-porch/10 text-amber-porch' : 'bg-pathway-green/10 text-pathway-green'}`}>
+                  {tpl.type}
+                </span>
+              </div>
+              <textarea 
+                className="w-full text-sm p-3 border border-deep-forest/10 rounded-lg bg-white shadow-inner focus:outline-none focus:ring-1 focus:ring-pathway-green h-24"
+                value={tpl.content}
+                onChange={e => {
+                  const newTpls = messageTemplates.map(t => t.id === tpl.id ? { ...t, content: e.target.value } : t);
+                  setMessageTemplates(newTpls);
+                  localStorage.setItem('wayside_message_templates', JSON.stringify(newTpls));
+                }}
+              />
+            </div>
+          ))}
         </div>
       </div>
 
