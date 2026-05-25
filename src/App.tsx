@@ -11,7 +11,7 @@ import { Toaster, toast } from 'sonner';
 import { SignaturePad } from './components/SignaturePad';
 import {
   saveDraft, loadDraft, clearDraft,
-  saveCompletedInspection, loadHistory, loadTemplate
+  saveCompletedInspection, loadHistory, loadTemplate, syncOfflineInspections
 } from './storage';
 import { useTimer } from './hooks/useTimer';
 import { Button } from '@/components/ui/button';
@@ -27,6 +27,7 @@ const EMPTY_CLIENT: ClientData = {
   propertyAddress: '',
   date: new Date().toISOString().split('T')[0],
   technicianName: '',
+  technicianId: '',
 };
 
 export default function App() {
@@ -115,10 +116,10 @@ export default function App() {
   // ── On mount: restore auth, check for draft ───────────────────────────────
   useEffect(() => {
     const storedName = localStorage.getItem('wayside_technician_name');
-    if (storedName) {
-      setClientData(prev => ({ ...prev, technicianName: storedName }));
+    const storedId = localStorage.getItem('wayside_technician_id');
+    if (storedName && storedId) {
+      setClientData(prev => ({ ...prev, technicianName: storedName, technicianId: storedId }));
       setStep('client_info');
-      // Check for an existing draft
       loadDraft().then(saved => {
         if (saved) {
           setDraft(saved);
@@ -128,6 +129,11 @@ export default function App() {
     }
     loadTemplate().then(setTemplateItems);
     loadHistory().then(history => setHistoryCount(history.length));
+
+    // Try offline sync on mount and every 30s
+    syncOfflineInspections();
+    const syncInterval = setInterval(syncOfflineInspections, 30000);
+    return () => clearInterval(syncInterval);
   }, []);
 
   // ── Auto-save draft while on checklist step ───────────────────────────────
@@ -167,6 +173,7 @@ export default function App() {
   const handleLogout = async () => {
     await supabase.auth.signOut();
     localStorage.removeItem('wayside_technician_name');
+    localStorage.removeItem('wayside_technician_id');
     stopTimer();
     setClientData(EMPTY_CLIENT);
     setChecklistData({});
@@ -234,7 +241,7 @@ export default function App() {
         technicianSignature
       };
       await generateAndDownloadPDF(report, templateItems);
-      await saveCompletedInspection(report, elapsed);
+      await saveCompletedInspection(report, elapsed, clientData.technicianId || '');
       await clearDraft();
       
       const history = await loadHistory();
@@ -263,8 +270,9 @@ export default function App() {
     return (
       <AuthLogin
         onLogin={(session, profile) => {
-          setClientData(prev => ({ ...prev, technicianName: profile.full_name }));
+          setClientData(prev => ({ ...prev, technicianName: profile.full_name, technicianId: profile.id }));
           localStorage.setItem('wayside_technician_name', profile.full_name);
+          localStorage.setItem('wayside_technician_id', profile.id);
           setStep('client_info');
           // Check for draft
           loadDraft().then(saved => {

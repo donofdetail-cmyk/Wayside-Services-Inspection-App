@@ -15,6 +15,7 @@ export interface D2DLead {
   notes: string;
   follow_up_date: string;
   created_at: string;
+  rep_id?: string;
 }
 
 export const PRICING_TIERS: Record<PricingTier, { label: string; price: number; sqft: string }> = {

@@ -32,6 +32,7 @@ export interface ClientData {
   propertyAddress: string;
   date: string;
   technicianName: string;
+  technicianId?: string;
 }
 
 export interface InspectionReport {

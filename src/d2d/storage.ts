@@ -3,6 +3,7 @@ import { D2DLead } from './types';
 import { get, set } from 'idb-keyval';
 
 const LOCAL_LEADS_KEY = 'd2d_leads_cache';
+const OFFLINE_LEADS_KEY = 'd2d_offline_queue';
 
 // ─── Supabase ─────────────────────────────────────────────────────────────────
 
@@ -15,9 +16,29 @@ export async function saveLeadToSupabase(lead: Omit<D2DLead, 'id' | 'created_at'
 
   if (error) {
     console.error('Supabase insert error:', error);
-    return null;
+    await queueOfflineLead(lead);
+    // Return a locally generated lead so UI proceeds
+    return { ...lead, id: crypto.randomUUID(), created_at: new Date().toISOString() } as D2DLead;
   }
   return data as D2DLead;
+}
+
+async function queueOfflineLead(lead: Omit<D2DLead, 'id' | 'created_at'>) {
+  const queue = await get<any[]>(OFFLINE_LEADS_KEY) || [];
+  queue.push(lead);
+  await set(OFFLINE_LEADS_KEY, queue);
+}
+
+export async function syncOfflineLeads(): Promise<void> {
+  const queue = await get<any[]>(OFFLINE_LEADS_KEY) || [];
+  if (queue.length === 0) return;
+  
+  const remaining = [];
+  for (const lead of queue) {
+    const { error } = await supabase.from('d2d_leads').insert([lead]);
+    if (error) remaining.push(lead);
+  }
+  await set(OFFLINE_LEADS_KEY, remaining);
 }
 
 export async function updateLeadInSupabase(id: string, updates: Partial<D2DLead>): Promise<void> {

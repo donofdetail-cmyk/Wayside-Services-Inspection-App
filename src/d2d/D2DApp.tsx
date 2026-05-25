@@ -6,7 +6,7 @@ import { LogDoorForm } from './components/LogDoorForm';
 import { PitchGuide } from './components/PitchGuide';
 import { StatsPanel } from './components/StatsPanel';
 import { D2DLead } from './types';
-import { saveLeadToSupabase, loadTodaysLeads } from './storage';
+import { saveLeadToSupabase, loadTodaysLeads, syncOfflineLeads } from './storage';
 import { MapPin, PlusCircle, BookOpen, BarChart2, LogOut, X, Menu } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 
@@ -14,6 +14,7 @@ type D2DTab = 'map' | 'log' | 'pitch' | 'stats';
 
 export default function D2DApp() {
   const [repName, setRepName] = useState<string | null>(null);
+  const [repId, setRepId] = useState<string | null>(null);
   const [leads, setLeads] = useState<D2DLead[]>([]);
   const [activeTab, setActiveTab] = useState<D2DTab>('map');
   const [logCoords, setLogCoords] = useState<{ lat: number; lng: number } | null>(null);
@@ -22,8 +23,12 @@ export default function D2DApp() {
 
   // Restore session
   useEffect(() => {
-    const saved = localStorage.getItem('d2d_rep_name');
-    if (saved) setRepName(saved);
+    const savedName = localStorage.getItem('d2d_rep_name');
+    const savedId = localStorage.getItem('d2d_rep_id');
+    if (savedName && savedId) {
+      setRepName(savedName);
+      setRepId(savedId);
+    }
   }, []);
 
   // Load today's leads when rep logs in
@@ -32,17 +37,25 @@ export default function D2DApp() {
     loadTodaysLeads(repName)
       .then(setLeads)
       .catch(() => toast.error('Could not load leads'));
+
+    syncOfflineLeads();
+    const syncInterval = setInterval(syncOfflineLeads, 30000);
+    return () => clearInterval(syncInterval);
   }, [repName]);
 
   const handleLogin = (session: any, profile: any) => {
     localStorage.setItem('d2d_rep_name', profile.full_name);
+    localStorage.setItem('d2d_rep_id', profile.id);
     setRepName(profile.full_name);
+    setRepId(profile.id);
   };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
     localStorage.removeItem('d2d_rep_name');
+    localStorage.removeItem('d2d_rep_id');
     setRepName(null);
+    setRepId(null);
     setLeads([]);
     setActiveTab('map');
     setMenuOpen(false);
@@ -54,8 +67,8 @@ export default function D2DApp() {
     setMenuOpen(false);
   }, []);
 
-  const handleSaveLead = async (leadData: Omit<D2DLead, 'id' | 'created_at'>) => {
-    const saved = await saveLeadToSupabase(leadData);
+  const handleSaveLead = async (leadData: Omit<D2DLead, 'id' | 'created_at' | 'rep_id'>) => {
+    const saved = await saveLeadToSupabase({ ...leadData, rep_id: repId! });
     if (saved) {
       setLeads(prev => [...prev, saved]);
       setActiveTab('map');
