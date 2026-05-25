@@ -4,6 +4,7 @@ import { supabase } from '../d2d/supabaseClient';
 import { Toaster, toast } from 'sonner';
 import { LayoutDashboard, Users, ClipboardList, LogOut, Loader2, MapPin, Search, FileText, Download, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 
 type AdminTab = 'dashboard' | 'inspections' | 'leads' | 'team';
 
@@ -207,10 +208,14 @@ export default function AdminApp() {
             <div className="p-6 overflow-y-auto flex-1 flex flex-col gap-6">
               
               {/* Meta Grid */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-deep-forest/5">
                   <span className="text-[10px] uppercase font-bold text-deep-forest/50 tracking-wider">Client</span>
                   <p className="font-bold text-deep-forest text-sm mt-1">{selectedInspection.client_name}</p>
+                </div>
+                <div className="bg-white p-4 rounded-2xl shadow-sm border border-deep-forest/5">
+                  <span className="text-[10px] uppercase font-bold text-deep-forest/50 tracking-wider">Phone</span>
+                  <p className="font-bold text-deep-forest text-sm mt-1">{selectedInspection.client_phone || 'N/A'}</p>
                 </div>
                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-deep-forest/5">
                   <span className="text-[10px] uppercase font-bold text-deep-forest/50 tracking-wider">Date</span>
@@ -229,6 +234,16 @@ export default function AdminApp() {
                   </p>
                 </div>
               </div>
+
+              {/* Raw Client Info Expansion (if exists) */}
+              {selectedInspection.client_info && (
+                <div className="bg-white p-4 rounded-2xl shadow-sm border border-deep-forest/5">
+                  <span className="text-[10px] uppercase font-bold text-deep-forest/50 tracking-wider mb-2 block">Full Client Data Payload</span>
+                  <pre className="text-xs text-deep-forest/70 bg-linen-white p-3 rounded-xl overflow-x-auto">
+                    {JSON.stringify(selectedInspection.client_info, null, 2)}
+                  </pre>
+                </div>
+              )}
 
               {/* PDF Button */}
               {selectedInspection.pdf_url && (
@@ -281,6 +296,24 @@ export default function AdminApp() {
                   )}
                 </div>
               </div>
+
+              {/* Signatures */}
+              {(selectedInspection.client_signature || selectedInspection.technician_signature) && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+                  {selectedInspection.client_signature && (
+                    <div className="bg-white p-4 rounded-2xl shadow-sm border border-deep-forest/5 flex flex-col items-center">
+                      <span className="text-[10px] uppercase font-bold text-deep-forest/50 tracking-wider mb-2">Client Signature</span>
+                      <img src={selectedInspection.client_signature} alt="Client Signature" className="h-20 object-contain mix-blend-multiply" />
+                    </div>
+                  )}
+                  {selectedInspection.technician_signature && (
+                    <div className="bg-white p-4 rounded-2xl shadow-sm border border-deep-forest/5 flex flex-col items-center">
+                      <span className="text-[10px] uppercase font-bold text-deep-forest/50 tracking-wider mb-2">Technician Signature</span>
+                      <img src={selectedInspection.technician_signature} alt="Technician Signature" className="h-20 object-contain mix-blend-multiply" />
+                    </div>
+                  )}
+                </div>
+              )}
 
             </div>
           </div>
