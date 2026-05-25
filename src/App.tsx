@@ -5,6 +5,8 @@ import { TimerBadge } from './components/TimerBadge';
 import { HistoryDashboard } from './components/HistoryDashboard';
 import { SettingsPage } from './components/SettingsPage';
 import { generateAndDownloadPDF } from './pdfGenerator';
+import { AuthLogin } from './components/AuthLogin';
+import { supabase } from './d2d/supabaseClient';
 import { Toaster, toast } from 'sonner';
 import { SignaturePad } from './components/SignaturePad';
 import {
@@ -34,8 +36,6 @@ export default function App() {
   const [historyCount, setHistoryCount] = useState(0);
 
   // ── Auth ─────────────────────────────────────────────────────────────────
-  const [loginName, setLoginName] = useState('');
-  const [loginPin, setLoginPin] = useState('');
   const [loginError, setLoginError] = useState('');
 
   // ── Inspection data ───────────────────────────────────────────────────────
@@ -164,29 +164,14 @@ export default function App() {
     }));
   };
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const correctPin = import.meta.env.VITE_TECHNICIAN_PIN || '2468';
-    if (loginPin === correctPin) {
-      localStorage.setItem('wayside_technician_name', loginName);
-      setClientData(prev => ({ ...prev, technicianName: loginName }));
-      setLoginError('');
-      const saved = await loadDraft();
-      if (saved) { setDraft(saved); setShowResumeBanner(true); }
-      setStep('client_info');
-    } else {
-      setLoginError('Invalid PIN');
-    }
-  };
-
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
     localStorage.removeItem('wayside_technician_name');
     stopTimer();
     setClientData(EMPTY_CLIENT);
     setChecklistData({});
     setClientSignature('');
     setTechnicianSignature('');
-    setLoginPin('');
     setDraft(null);
     setShowResumeBanner(false);
     setStep('login');
@@ -274,6 +259,30 @@ export default function App() {
   };
 
   // ── Render ────────────────────────────────────────────────────────────────
+  if (step === 'login') {
+    return (
+      <AuthLogin
+        onLogin={(session, profile) => {
+          setClientData(prev => ({ ...prev, technicianName: profile.full_name }));
+          localStorage.setItem('wayside_technician_name', profile.full_name);
+          setStep('client_info');
+          // Check for draft
+          loadDraft().then(saved => {
+            if (saved) {
+              setDraft(saved);
+              setShowResumeBanner(true);
+            }
+          });
+        }}
+        requiredRole="technician"
+        title="Technician Login"
+        subtitle="Sign in to access your inspections."
+        altLinkText="Sales rep? Switch to D2D Portal"
+        altLinkHref="/d2d"
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-linen-white text-deep-forest pb-20 font-sans">
       <Toaster position="top-center" richColors />
@@ -470,44 +479,6 @@ export default function App() {
       </header>
 
       <main className="max-w-4xl w-full mx-auto p-4 md:p-6 flex flex-col gap-6">
-
-        {/* ── Login ── */}
-        {step === 'login' && (
-          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-sm mx-auto w-full mt-10 md:mt-20">
-            <div className="bg-white rounded-2xl shadow-xl p-8">
-              <form onSubmit={handleLogin} className="flex flex-col gap-5">
-                <div>
-                  <h2 className="text-lg font-bold text-deep-forest">Technician Login</h2>
-                  <p className="text-xs text-deep-forest/70 mt-1">Enter your name and PIN to access the inspection app.</p>
-                </div>
-                {loginError && <p className="text-red-500 text-xs font-bold -mb-2">{loginError}</p>}
-                <div>
-                  <Label htmlFor="loginName" className="text-[10px] font-bold uppercase text-deep-forest/50 block mb-1.5">Your Name *</Label>
-                  <div className="relative">
-                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-deep-forest/30 pointer-events-none" />
-                    <Input id="loginName" required placeholder="Full name" value={loginName} onChange={(e) => setLoginName(e.target.value)} className="w-full pl-10 pr-4 py-3 rounded-xl border border-deep-forest/10 text-deep-forest text-sm focus:outline-none focus:border-pathway-green focus:ring-2 focus:ring-pathway-green/20 transition-all bg-linen-white/50 h-auto shadow-none" />
-                  </div>
-                </div>
-                <div>
-                  <Label htmlFor="loginPin" className="text-[10px] font-bold uppercase text-deep-forest/50 block mb-1.5">Technician PIN *</Label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-deep-forest/30 pointer-events-none" />
-                    <Input id="loginPin" type="password" placeholder="••••" required value={loginPin} onChange={(e) => setLoginPin(e.target.value)} className="w-full pl-10 pr-4 py-3 rounded-xl border border-deep-forest/10 text-deep-forest text-sm focus:outline-none focus:border-pathway-green focus:ring-2 focus:ring-pathway-green/20 transition-all bg-linen-white/50 h-auto shadow-none" />
-                  </div>
-                </div>
-                <button type="submit" className="w-full bg-pathway-green text-white py-4 rounded-xl font-bold text-[15px] hover:brightness-110 transition-all shadow-lg shadow-pathway-green/20 mt-2">
-                  Log In
-                </button>
-              </form>
-            </div>
-            <p className="text-center mt-4 text-deep-forest/30 text-xs">
-              Sales rep?{' '}
-              <a href="/d2d" className="text-pathway-green hover:underline font-semibold">
-                Switch to D2D Portal
-              </a>
-            </p>
-          </div>
-        )}
 
         {/* ── Client Info ── */}
         {step === 'client_info' && (

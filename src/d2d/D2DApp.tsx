@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { D2DLogin } from './components/D2DLogin';
+import { AuthLogin } from '../components/AuthLogin';
+import { supabase } from './supabaseClient';
 import { MapView } from './components/MapView';
 import { LogDoorForm } from './components/LogDoorForm';
 import { PitchGuide } from './components/PitchGuide';
@@ -33,9 +34,13 @@ export default function D2DApp() {
       .catch(() => toast.error('Could not load leads'));
   }, [repName]);
 
-  const handleLogin = (name: string) => setRepName(name);
+  const handleLogin = (session: any, profile: any) => {
+    localStorage.setItem('d2d_rep_name', profile.full_name);
+    setRepName(profile.full_name);
+  };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
     localStorage.removeItem('d2d_rep_name');
     setRepName(null);
     setLeads([]);
@@ -65,7 +70,14 @@ export default function D2DApp() {
     return (
       <>
         <Toaster position="top-center" richColors />
-        <D2DLogin onLogin={handleLogin} />
+        <AuthLogin
+          onLogin={handleLogin}
+          requiredRole="rep"
+          title="Sales Portal"
+          subtitle="Sign in to access your territory."
+          altLinkText="Inspector? Switch to Inspection App"
+          altLinkHref="/"
+        />
       </>
     );
   }
