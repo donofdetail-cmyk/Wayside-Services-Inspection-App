@@ -166,7 +166,7 @@ export default function App() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    const correctPin = import.meta.env.VITE_TECHNICIAN_PIN || '2468';
+    const correctPin = import.meta.env.VITE_TECHNICIAN_PIN;
     if (loginPin === correctPin) {
       localStorage.setItem('wayside_technician_name', loginName);
       setClientData(prev => ({ ...prev, technicianName: loginName }));
@@ -494,6 +494,12 @@ export default function App() {
                 </button>
               </form>
             </div>
+            <p className="text-center mt-4 text-deep-forest/30 text-xs">
+              Sales rep?{' '}
+              <a href="/d2d" className="text-pathway-green hover:underline font-semibold">
+                Switch to D2D Portal →
+              </a>
+            </p>
           </div>
         )}
 
