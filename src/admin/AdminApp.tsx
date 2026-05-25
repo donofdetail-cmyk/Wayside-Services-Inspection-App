@@ -164,17 +164,6 @@ export default function AdminApp() {
 
     return (
       <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-        <div className="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-deep-forest/5">
-          <div className="relative w-full max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-deep-forest/40" />
-            <Input 
-              placeholder="Search clients, addresses, or reps..." 
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="pl-10 bg-linen-white/50 border-deep-forest/10 rounded-xl"
-            />
-          </div>
-        </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="bg-white p-6 rounded-2xl shadow-xl border border-deep-forest/5 flex flex-col items-center justify-center text-center">
@@ -261,9 +250,20 @@ export default function AdminApp() {
         <h3 className="text-xl font-bold text-deep-forest flex items-center gap-2">
           <ClipboardList className="w-5 h-5 text-pathway-green" /> Inspection Reports
         </h3>
-        <Button onClick={exportInspectionsCSV} variant="outline" className="border-deep-forest/20 text-deep-forest gap-2 rounded-xl">
-          <Download className="w-4 h-4" /> Export CSV
-        </Button>
+        <div className="flex items-center gap-3">
+          <div className="relative w-full sm:w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-deep-forest/40" />
+            <Input 
+              placeholder="Search inspections..." 
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="pl-9 h-9 bg-linen-white/50 border-deep-forest/10 rounded-lg text-sm"
+            />
+          </div>
+          <Button onClick={exportInspectionsCSV} variant="outline" className="border-deep-forest/20 text-deep-forest gap-2 rounded-xl">
+            <Download className="w-4 h-4" /> Export CSV
+          </Button>
+        </div>
       </div>
       <div className="divide-y divide-deep-forest/5">
         {filteredInspections.length === 0 ? (
@@ -636,7 +636,9 @@ export default function AdminApp() {
       }
     });
 
-    const clientsList = Object.values(clientMap).sort((a,b) => a.name.localeCompare(b.name));
+    const clientsList = Object.values(clientMap)
+      .sort((a,b) => a.name.localeCompare(b.name))
+      .filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase()) || c.address.toLowerCase().includes(searchQuery.toLowerCase()));
 
     if (selectedClient) {
       // Re-find the latest state of the client so notes live-update
@@ -646,11 +648,22 @@ export default function AdminApp() {
 
     return (
       <div className="bg-white rounded-2xl shadow-xl border border-deep-forest/5 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
-        <div className="p-6 border-b border-deep-forest/10 flex justify-between items-center">
-          <h3 className="text-xl font-bold text-deep-forest flex items-center gap-2">
-            <Users className="w-5 h-5 text-amber-porch" /> Unified Client Roster
-          </h3>
-          <span className="bg-deep-forest/5 text-deep-forest px-3 py-1 rounded-full text-xs font-bold uppercase">{clientsList.length} Clients</span>
+        <div className="p-6 border-b border-deep-forest/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <h3 className="text-xl font-bold text-deep-forest flex items-center gap-2">
+              <Users className="w-5 h-5 text-amber-porch" /> Unified Client Roster
+            </h3>
+            <span className="bg-deep-forest/5 text-deep-forest px-3 py-1 rounded-full text-xs font-bold uppercase">{clientsList.length} Clients</span>
+          </div>
+          <div className="relative w-full sm:w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-deep-forest/40" />
+            <Input 
+              placeholder="Search clients..." 
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="pl-9 h-9 bg-linen-white/50 border-deep-forest/10 rounded-lg text-sm"
+            />
+          </div>
         </div>
         <div className="divide-y divide-deep-forest/5">
           {clientsList.length === 0 ? (
@@ -730,11 +743,25 @@ export default function AdminApp() {
                 onDragOver={e => e.preventDefault()}
                 onDrop={e => handleDrop(e, col.id)}
               >
-                <div className="p-4 border-b border-black/5 shrink-0 flex justify-between items-center">
+                <div className="p-4 border-b border-black/5 shrink-0 flex justify-between items-center pointer-events-none">
                   <h4 className="font-bold text-sm text-deep-forest uppercase tracking-wider">{col.label}</h4>
                   <span className="bg-white/50 px-2 py-0.5 rounded text-xs font-bold text-deep-forest/50">{colLeads.length}</span>
                 </div>
-                <div className="flex-1 p-3 flex flex-col gap-3 overflow-y-auto min-h-0">
+                <div 
+                  className="flex-1 p-3 flex flex-col gap-3 overflow-y-auto min-h-0 transition-all"
+                  onDragEnter={e => {
+                    e.preventDefault();
+                    e.currentTarget.classList.add('bg-white/50', 'ring-2', 'ring-amber-porch', 'ring-inset', 'rounded-xl');
+                  }}
+                  onDragLeave={e => {
+                    e.currentTarget.classList.remove('bg-white/50', 'ring-2', 'ring-amber-porch', 'ring-inset', 'rounded-xl');
+                  }}
+                  onDrop={e => {
+                    e.currentTarget.classList.remove('bg-white/50', 'ring-2', 'ring-amber-porch', 'ring-inset', 'rounded-xl');
+                    handleDrop(e, col.id);
+                  }}
+                  onDragOver={e => e.preventDefault()}
+                >
                   {colLeads.map(l => (
                     <div 
                       key={l.id} 
@@ -776,9 +803,20 @@ export default function AdminApp() {
         <h3 className="text-xl font-bold text-deep-forest flex items-center gap-2">
           <MapPin className="w-5 h-5 text-amber-porch" /> D2D Leads
         </h3>
-        <Button onClick={exportLeadsCSV} variant="outline" className="border-deep-forest/20 text-deep-forest gap-2 rounded-xl">
-          <Download className="w-4 h-4" /> Export CSV
-        </Button>
+        <div className="flex items-center gap-3">
+          <div className="relative w-full sm:w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-deep-forest/40" />
+            <Input 
+              placeholder="Search leads..." 
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="pl-9 h-9 bg-linen-white/50 border-deep-forest/10 rounded-lg text-sm"
+            />
+          </div>
+          <Button onClick={exportLeadsCSV} variant="outline" className="border-deep-forest/20 text-deep-forest gap-2 rounded-xl">
+            <Download className="w-4 h-4" /> Export CSV
+          </Button>
+        </div>
       </div>
       <div className="divide-y divide-deep-forest/5">
         {filteredLeads.length === 0 ? (
@@ -989,9 +1027,22 @@ export default function AdminApp() {
                             {isOverdue ? 'Overdue: ' : 'Scheduled for: '} {new Date(t.scheduled_for).toLocaleDateString()}
                           </p>
                         </div>
-                        <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded ${isOverdue ? 'bg-red-50 text-red-500' : 'bg-amber-porch/10 text-amber-porch'}`}>
-                          {isOverdue ? 'Requires Action' : 'Pending'}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded ${isOverdue ? 'bg-red-50 text-red-500' : 'bg-amber-porch/10 text-amber-porch'}`}>
+                            {isOverdue ? 'Requires Action' : 'Pending'}
+                          </span>
+                          <button 
+                            onClick={async () => {
+                              await supabase.from('client_touchpoints').update({ status: 'sent', sent_at: new Date().toISOString() }).eq('id', t.id);
+                              toast.success('Touchpoint executed');
+                              setTouchpoints(touchpoints.map(tp => tp.id === t.id ? { ...tp, status: 'sent', sent_at: new Date().toISOString() } : tp));
+                            }}
+                            className="w-8 h-8 rounded bg-pathway-green text-white hover:brightness-110 flex items-center justify-center transition-all"
+                            title="Execute Touchpoint"
+                          >
+                            <Send className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
@@ -1019,7 +1070,20 @@ export default function AdminApp() {
                         <p className="font-bold text-sm text-deep-forest">{l.contact_name || 'Resident'} - {l.address}</p>
                         <p className="text-xs text-deep-forest/60">Logged {new Date(l.created_at).toLocaleDateString()}</p>
                       </div>
-                      <span className="text-xs font-bold text-amber-porch bg-amber-porch/10 px-2 py-1 rounded">Pending SMS</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-amber-porch bg-amber-porch/10 px-2 py-1 rounded">Pending SMS</span>
+                        <button 
+                          onClick={async () => {
+                            await supabase.from('d2d_leads').update({ follow_up_status: 'sent' }).eq('id', l.id);
+                            toast.success('SMS Sent');
+                            setLeads(leads.map(lead => lead.id === l.id ? { ...lead, follow_up_status: 'sent' } : lead));
+                          }}
+                          className="w-8 h-8 rounded bg-pathway-green text-white hover:brightness-110 flex items-center justify-center transition-all"
+                          title="Send SMS"
+                        >
+                          <Send className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1046,7 +1110,20 @@ export default function AdminApp() {
                         <p className="font-bold text-sm text-deep-forest">{i.client_name}</p>
                         <p className="text-xs text-deep-forest/60">{i.client_email || 'No email provided'}</p>
                       </div>
-                      <span className="text-xs font-bold text-amber-porch bg-amber-porch/10 px-2 py-1 rounded">Pending Email</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-amber-porch bg-amber-porch/10 px-2 py-1 rounded">Pending Email</span>
+                        <button 
+                          onClick={async () => {
+                            await supabase.from('inspections').update({ follow_up_status: 'sent' }).eq('id', i.id);
+                            toast.success('Email Sent');
+                            setInspections(inspections.map(ins => ins.id === i.id ? { ...ins, follow_up_status: 'sent' } : ins));
+                          }}
+                          className="w-8 h-8 rounded bg-pathway-green text-white hover:brightness-110 flex items-center justify-center transition-all"
+                          title="Send Email"
+                        >
+                          <Send className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
