@@ -153,8 +153,49 @@ export default function App() {
     // Try offline sync on mount and every 30s
     syncOfflineInspections();
     const syncInterval = setInterval(syncOfflineInspections, 30000);
+
+    // Request notification permissions
+    if ('Notification' in window) {
+      Notification.requestPermission();
+    }
+
     return () => clearInterval(syncInterval);
   }, []);
+
+  // ── Supabase Realtime Subscriptions ────────────────────────────────────────
+  useEffect(() => {
+    if (!clientData.technicianId || step !== 'dashboard') return;
+
+    const channel = supabase.channel('tech_jobs')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'd2d_leads',
+          filter: `assigned_tech_id=eq.${clientData.technicianId}`
+        },
+        (payload) => {
+          // A job was assigned to this tech
+          const lead = payload.new as any;
+          if (lead.status === 'scheduled') {
+            toast.success(`New job assigned: ${lead.address}`);
+            if ('Notification' in window && Notification.permission === 'granted') {
+              new Notification('New Job Assigned!', {
+                body: `You've been assigned a new job at ${lead.address}`,
+                icon: '/vite.svg'
+              });
+            }
+            fetchScheduledJobs(clientData.technicianId!);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [clientData.technicianId, step, fetchScheduledJobs]);
 
   // ── Auto-save draft while on checklist step ───────────────────────────────
   const autoSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
