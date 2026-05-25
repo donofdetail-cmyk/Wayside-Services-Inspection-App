@@ -186,7 +186,11 @@ export default function App() {
                 icon: '/vite.svg'
               });
             }
-            fetchScheduledJobs(clientData.technicianId!);
+            setScheduledJobs(prev => {
+              const exists = prev.find(j => j.id === lead.id);
+              if (exists) return prev.map(j => j.id === lead.id ? lead : j);
+              return [lead, ...prev];
+            });
           }
         }
       )

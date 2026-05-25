@@ -69,6 +69,28 @@ export default function AdminApp() {
     }
 
     fetchData();
+
+    // -- REALTIME LIVE DASHBOARD SYNC --
+    const channel = supabase.channel('admin_live_feed')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'd2d_leads' }, (payload) => {
+        setLeads(prev => [payload.new as any, ...prev]);
+        toast.success(`New door logged by ${payload.new.rep_name}!`);
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'd2d_leads' }, (payload) => {
+        setLeads(prev => prev.map(l => l.id === payload.new.id ? payload.new as any : l));
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'inspections' }, (payload) => {
+        setInspections(prev => [payload.new as any, ...prev]);
+        toast.success(`New inspection completed for ${payload.new.client_name}!`);
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'inspections' }, (payload) => {
+        setInspections(prev => prev.map(i => i.id === payload.new.id ? payload.new as any : i));
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [adminName]);
 
   if (!adminName) {
