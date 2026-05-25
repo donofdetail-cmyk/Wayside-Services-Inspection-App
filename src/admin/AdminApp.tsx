@@ -2,11 +2,13 @@ import { useState, useEffect } from 'react';
 import { AuthLogin } from '../components/AuthLogin';
 import { supabase } from '../d2d/supabaseClient';
 import { Toaster, toast } from 'sonner';
-import { LayoutDashboard, Users, ClipboardList, LogOut, Loader2, MapPin, Search, FileText, Download, X } from 'lucide-react';
+import { LayoutDashboard, Users, ClipboardList, LogOut, Loader2, MapPin, Search, FileText, Download, X, Calendar as CalendarIcon, BarChart3, Inbox, Clock, Send, Settings } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { format, parseISO, startOfWeek, addDays, isSameDay } from 'date-fns';
+import { BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
 
-type AdminTab = 'dashboard' | 'inspections' | 'leads' | 'team' | 'settings';
+type AdminTab = 'dashboard' | 'inspections' | 'leads' | 'dispatch' | 'action_center' | 'analytics' | 'team' | 'settings';
 
 export default function AdminApp() {
   const [adminName, setAdminName] = useState<string | null>(null);
@@ -558,6 +560,188 @@ export default function AdminApp() {
     </div>
   );
 
+  const renderAnalytics = () => {
+    // Leads by Day (Last 7 Days)
+    const last7Days = Array.from({length: 7}).map((_, i) => {
+      const d = new Date();
+      d.setDate(d.getDate() - (6 - i));
+      return d.toISOString().split('T')[0];
+    });
+    
+    const chartData = last7Days.map(date => ({
+      date: date.substring(5), // MM-DD
+      leads: leads.filter(l => l.created_at.startsWith(date)).length,
+      inspections: inspections.filter(ins => ins.created_at.startsWith(date)).length
+    }));
+
+    const techStats = profiles.filter(p => p.role === 'technician').map(tech => {
+      const techInspections = inspections.filter(i => i.technician_id === tech.id);
+      const avgDuration = techInspections.length ? techInspections.reduce((acc, i) => acc + (i.duration_seconds || 0), 0) / techInspections.length : 0;
+      return { name: tech.full_name, total: techInspections.length, avgDuration: Math.round(avgDuration / 60) };
+    }).sort((a, b) => b.total - a.total);
+
+    return (
+      <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="bg-white p-6 rounded-2xl shadow-xl border border-deep-forest/5">
+            <h3 className="font-bold text-deep-forest mb-6 flex items-center gap-2"><BarChart3 className="w-5 h-5 text-amber-porch" /> 7-Day Performance</h3>
+            <div className="h-64 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData}>
+                  <XAxis dataKey="date" stroke="#102e2150" fontSize={12} />
+                  <YAxis stroke="#102e2150" fontSize={12} allowDecimals={false} />
+                  <RechartsTooltip cursor={{fill: '#f5efe6'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}} />
+                  <Bar dataKey="leads" name="New Leads" fill="#1D9E75" radius={[4,4,0,0]} />
+                  <Bar dataKey="inspections" name="Completed Inspections" fill="#f0a500" radius={[4,4,0,0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="bg-white p-6 rounded-2xl shadow-xl border border-deep-forest/5">
+            <h3 className="font-bold text-deep-forest mb-6 flex items-center gap-2"><Users className="w-5 h-5 text-amber-porch" /> Technician Leaderboard</h3>
+            <div className="space-y-4">
+              {techStats.map((t, idx) => (
+                <div key={idx} className="flex items-center justify-between p-4 border border-deep-forest/10 rounded-xl">
+                  <div className="flex items-center gap-3">
+                    <span className="font-bold text-amber-porch text-lg w-6">{idx + 1}</span>
+                    <span className="font-bold text-deep-forest">{t.name}</span>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-bold text-pathway-green">{t.total} Inspections</p>
+                    <p className="text-xs text-deep-forest/60">Avg. {t.avgDuration} mins</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderDispatch = () => {
+    const scheduledLeads = leads.filter(l => l.status === 'scheduled');
+    
+    return (
+      <div className="bg-white rounded-2xl shadow-xl border border-deep-forest/5 p-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <h3 className="text-xl font-bold text-deep-forest flex items-center gap-2 mb-6">
+          <CalendarIcon className="w-5 h-5 text-amber-porch" /> Dispatch & Scheduling
+        </h3>
+        <div className="space-y-4">
+          {scheduledLeads.length === 0 ? <p className="text-deep-forest/50">No scheduled leads.</p> : scheduledLeads.map(lead => (
+            <div key={lead.id} className="border border-deep-forest/10 rounded-xl p-4 flex flex-col xl:flex-row gap-4 items-center">
+              <div className="flex-1 w-full">
+                <p className="font-bold text-deep-forest">{lead.contact_name || 'No Name'} <span className="text-xs font-normal text-deep-forest/50 ml-2">Logged by {lead.rep_name}</span></p>
+                <p className="text-sm text-deep-forest/70 truncate" title={lead.address}>{lead.address}</p>
+              </div>
+              <div className="flex flex-col md:flex-row gap-3 items-center shrink-0">
+                <select
+                  className="text-sm p-2 border border-deep-forest/20 rounded-md bg-white focus:outline-none w-40"
+                  value={lead.assigned_tech_id || ''}
+                  onChange={async (e) => {
+                    const techId = e.target.value;
+                    const { error } = await supabase.from('d2d_leads').update({ assigned_tech_id: techId }).eq('id', lead.id);
+                    if (!error) setLeads(leads.map(l => l.id === lead.id ? { ...l, assigned_tech_id: techId } : l));
+                  }}
+                >
+                  <option value="" disabled>Assign Tech...</option>
+                  {profiles.filter(p => p.role === 'technician').map(tech => (
+                    <option key={tech.id} value={tech.id}>{tech.full_name}</option>
+                  ))}
+                </select>
+                <Input type="datetime-local" className="w-48 text-sm" value={lead.scheduled_start ? lead.scheduled_start.substring(0,16) : ''} onChange={async (e) => {
+                  const val = e.target.value ? new Date(e.target.value).toISOString() : null;
+                  const { error } = await supabase.from('d2d_leads').update({ scheduled_start: val }).eq('id', lead.id);
+                  if (!error) setLeads(leads.map(l => l.id === lead.id ? { ...l, scheduled_start: val } : l));
+                }} />
+                <span className="text-deep-forest/30 hidden md:block">to</span>
+                <Input type="datetime-local" className="w-48 text-sm" value={lead.scheduled_end ? lead.scheduled_end.substring(0,16) : ''} onChange={async (e) => {
+                  const val = e.target.value ? new Date(e.target.value).toISOString() : null;
+                  const { error } = await supabase.from('d2d_leads').update({ scheduled_end: val }).eq('id', lead.id);
+                  if (!error) setLeads(leads.map(l => l.id === lead.id ? { ...l, scheduled_end: val } : l));
+                }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  const renderActionCenter = () => {
+    const pendingLeads = leads.filter(l => l.status === 'not_home' && l.follow_up_status === 'pending');
+    const pendingInspections = inspections.filter(i => i.follow_up_status === 'pending');
+
+    return (
+      <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <div className="bg-white rounded-2xl shadow-xl border border-deep-forest/5 p-6">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-xl font-bold text-deep-forest flex items-center gap-2">
+              <Inbox className="w-5 h-5 text-amber-porch" /> CRM Action Center
+            </h3>
+          </div>
+          
+          <div className="space-y-8">
+            {/* Follow up leads */}
+            <div>
+              <div className="flex justify-between items-center mb-4">
+                <h4 className="font-bold text-deep-forest">"Not Home" Leads to Follow Up</h4>
+                <Button onClick={async () => {
+                  for (const l of pendingLeads) await supabase.from('d2d_leads').update({ follow_up_status: 'sent' }).eq('id', l.id);
+                  toast.success(`Sent ${pendingLeads.length} SMS messages!`);
+                  setLeads(leads.map(l => pendingLeads.find(p => p.id === l.id) ? { ...l, follow_up_status: 'sent' } : l));
+                }} disabled={pendingLeads.length === 0} className="bg-pathway-green text-white hover:brightness-110 gap-2">
+                  <Send className="w-4 h-4" /> Send All SMS
+                </Button>
+              </div>
+              {pendingLeads.length === 0 ? <p className="text-sm text-deep-forest/50">Inbox zero! No pending follow ups.</p> : (
+                <div className="grid gap-3">
+                  {pendingLeads.map(l => (
+                    <div key={l.id} className="p-3 border border-deep-forest/10 rounded-lg flex justify-between items-center bg-linen-white/30">
+                      <div>
+                        <p className="font-bold text-sm text-deep-forest">{l.contact_name || 'Resident'} - {l.address}</p>
+                        <p className="text-xs text-deep-forest/60">Logged {new Date(l.created_at).toLocaleDateString()}</p>
+                      </div>
+                      <span className="text-xs font-bold text-amber-porch bg-amber-porch/10 px-2 py-1 rounded">Pending SMS</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Follow up reviews */}
+            <div>
+              <div className="flex justify-between items-center mb-4">
+                <h4 className="font-bold text-deep-forest">Completed Inspections (Ask for Review)</h4>
+                <Button onClick={async () => {
+                  for (const i of pendingInspections) await supabase.from('inspections').update({ follow_up_status: 'sent' }).eq('id', i.id);
+                  toast.success(`Sent ${pendingInspections.length} Review Request Emails!`);
+                  setInspections(inspections.map(ins => pendingInspections.find(p => p.id === ins.id) ? { ...ins, follow_up_status: 'sent' } : ins));
+                }} disabled={pendingInspections.length === 0} className="bg-pathway-green text-white hover:brightness-110 gap-2">
+                  <Send className="w-4 h-4" /> Send All Emails
+                </Button>
+              </div>
+              {pendingInspections.length === 0 ? <p className="text-sm text-deep-forest/50">Inbox zero! No pending review requests.</p> : (
+                <div className="grid gap-3">
+                  {pendingInspections.map(i => (
+                    <div key={i.id} className="p-3 border border-deep-forest/10 rounded-lg flex justify-between items-center bg-linen-white/30">
+                      <div>
+                        <p className="font-bold text-sm text-deep-forest">{i.client_name}</p>
+                        <p className="text-xs text-deep-forest/60">{i.client_email || 'No email provided'}</p>
+                      </div>
+                      <span className="text-xs font-bold text-amber-porch bg-amber-porch/10 px-2 py-1 rounded">Pending Email</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderTeam = () => (
     <div className="bg-white rounded-2xl shadow-xl border border-deep-forest/5 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="p-6 border-b border-deep-forest/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -721,10 +905,13 @@ export default function AdminApp() {
 
   const tabs = [
     { id: 'dashboard' as AdminTab, label: 'Overview', icon: LayoutDashboard },
+    { id: 'analytics' as AdminTab, label: 'Analytics', icon: BarChart3 },
+    { id: 'dispatch' as AdminTab, label: 'Dispatch', icon: CalendarIcon },
+    { id: 'action_center' as AdminTab, label: 'Action Center', icon: Inbox },
     { id: 'inspections' as AdminTab, label: 'Inspections', icon: ClipboardList },
     { id: 'leads' as AdminTab, label: 'Leads', icon: MapPin },
     { id: 'team' as AdminTab, label: 'Team', icon: Users },
-    { id: 'settings' as AdminTab, label: 'Settings', icon: Search }, // Or any appropriate icon like Settings if available
+    { id: 'settings' as AdminTab, label: 'Settings', icon: Settings },
   ];
 
   return (
@@ -817,6 +1004,9 @@ export default function AdminApp() {
         ) : (
           <>
             {activeTab === 'dashboard' && renderDashboard()}
+            {activeTab === 'analytics' && renderAnalytics()}
+            {activeTab === 'dispatch' && renderDispatch()}
+            {activeTab === 'action_center' && renderActionCenter()}
             {activeTab === 'inspections' && renderInspections()}
             {activeTab === 'leads' && renderLeads()}
             {activeTab === 'team' && renderTeam()}
