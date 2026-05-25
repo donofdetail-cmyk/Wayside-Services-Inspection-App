@@ -97,7 +97,8 @@ export async function saveCompletedInspection(
       property_address: record.clientInfo.propertyAddress,
       checklist_data: record.checklist as any,
       created_at: record.completedAt,
-      pdf_url: pdfUrl
+      pdf_url: pdfUrl,
+      duration_seconds: durationSeconds
     };
 
     const { error } = await supabase.from('inspections').insert([supabaseRecord]);

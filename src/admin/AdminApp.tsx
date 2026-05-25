@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { AuthLogin } from '../components/AuthLogin';
 import { supabase } from '../d2d/supabaseClient';
 import { Toaster, toast } from 'sonner';
-import { LayoutDashboard, Users, ClipboardList, LogOut, Loader2, MapPin, Search } from 'lucide-react';
+import { LayoutDashboard, Users, ClipboardList, LogOut, Loader2, MapPin, Search, FileText, Download, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 
 type AdminTab = 'dashboard' | 'inspections' | 'leads' | 'team';
@@ -15,6 +15,14 @@ export default function AdminApp() {
   const [leads, setLeads] = useState<any[]>([]);
   const [profiles, setProfiles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedInspection, setSelectedInspection] = useState<any | null>(null);
+
+  const formatSeconds = (s: number) => {
+    if (!s) return 'Unknown';
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return `${m}m ${sec}s`;
+  };
 
   useEffect(() => {
     const savedName = localStorage.getItem('wayside_admin_name');
@@ -165,20 +173,119 @@ export default function AdminApp() {
                   {new Date(insp.created_at).toLocaleDateString()}
                 </p>
               </div>
-              <div className="text-right flex flex-col items-end gap-2">
+              <div className="text-right flex flex-col items-end gap-2 shrink-0">
                 <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-pathway-green/10 text-pathway-green text-xs font-bold uppercase tracking-wide">
                   Completed
                 </span>
-                {insp.pdf_url && (
-                  <a href={insp.pdf_url} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-amber-porch hover:underline">
-                    View PDF Report
-                  </a>
-                )}
+                <Button variant="ghost" onClick={() => setSelectedInspection(insp)} className="text-xs font-bold text-deep-forest hover:bg-deep-forest/5 h-8">
+                  View Details
+                </Button>
               </div>
             </div>
           ))
         )}
       </div>
+
+      {/* Detail Modal */}
+      {selectedInspection && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-deep-forest/80 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setSelectedInspection(null)}>
+          <div className="bg-linen-white rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
+            {/* Modal Header */}
+            <div className="p-6 bg-white border-b border-deep-forest/10 flex justify-between items-start shrink-0">
+              <div>
+                <h2 className="text-2xl font-bold text-deep-forest mb-1">Inspection Details</h2>
+                <p className="text-sm font-bold text-deep-forest/60 flex items-center gap-1.5">
+                  <MapPin className="w-4 h-4" /> {selectedInspection.property_address}
+                </p>
+              </div>
+              <button onClick={() => setSelectedInspection(null)} className="w-8 h-8 flex items-center justify-center rounded-full bg-deep-forest/5 hover:bg-deep-forest/10 text-deep-forest transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Scrollable Content */}
+            <div className="p-6 overflow-y-auto flex-1 flex flex-col gap-6">
+              
+              {/* Meta Grid */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="bg-white p-4 rounded-2xl shadow-sm border border-deep-forest/5">
+                  <span className="text-[10px] uppercase font-bold text-deep-forest/50 tracking-wider">Client</span>
+                  <p className="font-bold text-deep-forest text-sm mt-1">{selectedInspection.client_name}</p>
+                </div>
+                <div className="bg-white p-4 rounded-2xl shadow-sm border border-deep-forest/5">
+                  <span className="text-[10px] uppercase font-bold text-deep-forest/50 tracking-wider">Date</span>
+                  <p className="font-bold text-deep-forest text-sm mt-1">{new Date(selectedInspection.created_at).toLocaleDateString()}</p>
+                </div>
+                <div className="bg-white p-4 rounded-2xl shadow-sm border border-deep-forest/5">
+                  <span className="text-[10px] uppercase font-bold text-deep-forest/50 tracking-wider">Technician</span>
+                  <p className="font-bold text-deep-forest text-sm mt-1">
+                    {profiles.find(p => p.id === selectedInspection.technician_id)?.full_name || 'Unknown Tech'}
+                  </p>
+                </div>
+                <div className="bg-white p-4 rounded-2xl shadow-sm border border-deep-forest/5">
+                  <span className="text-[10px] uppercase font-bold text-deep-forest/50 tracking-wider">Duration</span>
+                  <p className="font-bold text-pathway-green text-sm mt-1">
+                    {formatSeconds(selectedInspection.duration_seconds)}
+                  </p>
+                </div>
+              </div>
+
+              {/* PDF Button */}
+              {selectedInspection.pdf_url && (
+                <a href={selectedInspection.pdf_url} target="_blank" rel="noopener noreferrer" className="bg-amber-porch text-white font-bold px-6 py-4 rounded-2xl flex items-center justify-between group hover:brightness-110 transition-all shadow-md shadow-amber-porch/20">
+                  <span className="flex items-center gap-2"><FileText className="w-5 h-5" /> Official PDF Report</span>
+                  <Download className="w-5 h-5 opacity-50 group-hover:opacity-100 transition-opacity" />
+                </a>
+              )}
+
+              {/* Checklist Breakdown */}
+              <div>
+                <h3 className="text-lg font-bold text-deep-forest mb-4 flex items-center gap-2">
+                  <ClipboardList className="w-5 h-5" /> Checklist X-Ray
+                </h3>
+                <div className="grid gap-3">
+                  {selectedInspection.checklist_data && Array.isArray(selectedInspection.checklist_data) ? selectedInspection.checklist_data.map((item: any, idx: number) => {
+                    if (!item) return null;
+                    const isPass = item.status === 'Pass' || item.status === 'Good';
+                    const statusColor = isPass ? 'text-pathway-green bg-pathway-green/10' : 'text-red-600 bg-red-50';
+                    return (
+                      <div key={idx} className="bg-white p-4 rounded-xl border border-deep-forest/5 shadow-sm">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-bold text-deep-forest text-sm">Item {idx + 1}</span>
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${statusColor}`}>
+                            {item.status || 'N/A'}
+                          </span>
+                        </div>
+                        {item.seasonalTaskName && (
+                          <p className="text-xs font-bold text-amber-porch mb-1">Seasonal Task: {item.seasonalTaskName}</p>
+                        )}
+                        {item.notes && (
+                          <div className="mt-2 text-xs text-deep-forest/70 bg-linen-white p-3 rounded-lg border border-deep-forest/5 italic">
+                            "{item.notes}"
+                          </div>
+                        )}
+                        {item.rooms && item.rooms.length > 0 && (
+                          <div className="mt-2 pl-3 border-l-2 border-pathway-green/20">
+                            <span className="text-[10px] font-bold uppercase text-deep-forest/40">Room Details:</span>
+                            {item.rooms.map((r: any, rIdx: number) => (
+                              <p key={rIdx} className="text-xs text-deep-forest/80 mt-1">
+                                <strong className="text-deep-forest">{r.name || 'Room'}:</strong> {r.notes || 'No notes'}
+                              </p>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }) : (
+                    <p className="text-sm text-deep-forest/50 italic p-4 bg-white rounded-xl">No detailed checklist data available for this legacy record.</p>
+                  )}
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 
