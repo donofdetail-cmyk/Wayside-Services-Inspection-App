@@ -1473,7 +1473,7 @@ export default function AdminApp() {
       <main className="flex-1 p-4 md:p-8 max-w-5xl mx-auto w-full">
         <div className="mb-8">
           <h2 className="text-3xl font-bold text-deep-forest tracking-tight">
-            {activeTab === 'dashboard' ? 'Overview' : activeTab === 'inspections' ? 'Inspections' : 'Sales Leads'}
+            {tabs.find(t => t.id === activeTab)?.label || 'Overview'}
           </h2>
           <p className="text-deep-forest/60 mt-1">Manage and oversee Wayside operations.</p>
         </div>
