@@ -443,7 +443,7 @@ export default function AdminApp() {
                 </div>
                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-deep-forest/5">
                   <span className="text-[10px] uppercase font-bold text-deep-forest/50 tracking-wider">Status</span>
-                  <p className="font-bold text-deep-forest text-sm mt-1 capitalize">{selectedLead.status.replace('_', ' ')}</p>
+                  <p className="font-bold text-deep-forest text-sm mt-1 capitalize">{selectedLead.status ? selectedLead.status.replace('_', ' ') : 'Unknown'}</p>
                 </div>
                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-deep-forest/5">
                   <span className="text-[10px] uppercase font-bold text-deep-forest/50 tracking-wider">Date</span>
@@ -602,7 +602,7 @@ export default function AdminApp() {
               <div className="flex items-center gap-3 shrink-0">
                 <div className="text-right flex flex-col items-end gap-2">
                   <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-deep-forest/10 text-deep-forest text-xs font-bold uppercase tracking-wide">
-                    {lead.status.replace('_', ' ')}
+                    {lead.status ? lead.status.replace('_', ' ') : 'Unknown'}
                   </span>
                   {lead.status === 'scheduled' && !lead.assigned_tech_id && (
                     <select
@@ -791,7 +791,7 @@ export default function AdminApp() {
                     return (
                       <div key={t.id} className="p-4 border border-deep-forest/10 rounded-xl flex justify-between items-center bg-linen-white/30">
                         <div>
-                          <p className="font-bold text-sm text-deep-forest">{t.client_name} - <span className="capitalize">{t.campaign_type.replace(/_/g, ' ')}</span></p>
+                          <p className="font-bold text-sm text-deep-forest">{t.client_name} - <span className="capitalize">{t.campaign_type ? t.campaign_type.replace(/_/g, ' ') : 'Nurture'}</span></p>
                           <p className="text-xs text-deep-forest/60">{t.property_address}</p>
                           <p className={`text-xs mt-1 font-bold ${isOverdue ? 'text-red-500' : 'text-deep-forest/40'}`}>
                             {isOverdue ? 'Overdue: ' : 'Scheduled for: '} {new Date(t.scheduled_for).toLocaleDateString()}
