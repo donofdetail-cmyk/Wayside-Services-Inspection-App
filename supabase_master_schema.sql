@@ -21,19 +21,23 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 -- (Single definition: safe defaults + idempotent trigger)
 -- ==============================================================================
 CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS trigger AS $$
+RETURNS trigger AS $
 BEGIN
-  INSERT INTO public.profiles (id, full_name, role)
-  VALUES (
-    new.id,
-    COALESCE(new.raw_user_meta_data->>'full_name', 'New User'),
-    COALESCE(new.raw_user_meta_data->>'role', 'technician')
-  )
-  ON CONFLICT (id) DO NOTHING;
+  BEGIN
+    INSERT INTO public.profiles (id, full_name, role)
+    VALUES (
+      new.id,
+      COALESCE(new.raw_user_meta_data->>'full_name', 'New User'),
+      COALESCE(new.raw_user_meta_data->>'role', 'technician')
+    )
+    ON CONFLICT (id) DO NOTHING;
+  EXCEPTION WHEN OTHERS THEN
+    RAISE WARNING 'Failed to create profile for new user %: %', new.id, SQLERRM;
+  END;
 
   RETURN new;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 
