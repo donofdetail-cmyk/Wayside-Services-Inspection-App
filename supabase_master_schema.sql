@@ -407,3 +407,138 @@ BEGIN
     EXECUTE 'ALTER PUBLICATION supabase_realtime ADD TABLE public.communication_logs';
   END IF;
 END $$;
+-- ==============================================================================
+-- PHASE 1: GOD MODE ARCHITECTURE
+-- Run this in the Supabase SQL Editor
+-- ==============================================================================
+
+-- 1) UPDATE PROFILES TO SUPPORT 'owner' ROLE
+-- ==============================================================================
+ALTER TABLE public.profiles DROP CONSTRAINT IF EXISTS profiles_role_check;
+ALTER TABLE public.profiles ADD CONSTRAINT profiles_role_check CHECK (role IN ('technician', 'rep', 'admin', 'owner'));
+
+-- 2) UNIVERSAL AUDIT LOGGER
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.audit_logs (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  table_name TEXT NOT NULL,
+  record_id UUID,
+  action TEXT NOT NULL,
+  old_data JSONB,
+  new_data JSONB,
+  changed_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  timestamp TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Enable RLS on audit_logs (Only owners/admins can view)
+ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Admins can view audit logs" ON public.audit_logs;
+CREATE POLICY "Admins can view audit logs"
+ON public.audit_logs
+FOR SELECT TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM public.profiles 
+    WHERE profiles.id = auth.uid() AND role IN ('admin', 'owner')
+  )
+);
+
+-- Trigger Function
+CREATE OR REPLACE FUNCTION public.audit_trigger_func()
+RETURNS trigger AS $$
+DECLARE
+  v_old_data JSONB;
+  v_new_data JSONB;
+BEGIN
+  IF (TG_OP = 'DELETE') THEN
+    v_old_data := row_to_json(OLD)::JSONB;
+    INSERT INTO public.audit_logs (table_name, record_id, action, old_data, changed_by)
+    VALUES (TG_TABLE_NAME::TEXT, OLD.id, TG_OP, v_old_data, auth.uid());
+    RETURN OLD;
+  ELSIF (TG_OP = 'UPDATE') THEN
+    v_old_data := row_to_json(OLD)::JSONB;
+    v_new_data := row_to_json(NEW)::JSONB;
+    
+    -- Distinguish SOFT_DELETE vs RESTORE vs UPDATE
+    -- Check if deleted_at column exists in the row before trying to access it dynamically
+    IF (v_old_data ? 'deleted_at' AND v_new_data ? 'deleted_at') THEN
+        IF (v_old_data->>'deleted_at' IS NULL AND v_new_data->>'deleted_at' IS NOT NULL) THEN
+            INSERT INTO public.audit_logs (table_name, record_id, action, old_data, new_data, changed_by)
+            VALUES (TG_TABLE_NAME::TEXT, NEW.id, 'SOFT_DELETE', v_old_data, v_new_data, auth.uid());
+            RETURN NEW;
+        ELSIF (v_old_data->>'deleted_at' IS NOT NULL AND v_new_data->>'deleted_at' IS NULL) THEN
+            INSERT INTO public.audit_logs (table_name, record_id, action, old_data, new_data, changed_by)
+            VALUES (TG_TABLE_NAME::TEXT, NEW.id, 'RESTORE', v_old_data, v_new_data, auth.uid());
+            RETURN NEW;
+        END IF;
+    END IF;
+
+    -- Standard Update
+    INSERT INTO public.audit_logs (table_name, record_id, action, old_data, new_data, changed_by)
+    VALUES (TG_TABLE_NAME::TEXT, NEW.id, TG_OP, v_old_data, v_new_data, auth.uid());
+    RETURN NEW;
+    
+  ELSIF (TG_OP = 'INSERT') THEN
+    v_new_data := row_to_json(NEW)::JSONB;
+    INSERT INTO public.audit_logs (table_name, record_id, action, new_data, changed_by)
+    VALUES (TG_TABLE_NAME::TEXT, NEW.id, TG_OP, v_new_data, auth.uid());
+    RETURN NEW;
+  END IF;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+
+-- 3) SOFT DELETE ARCHITECTURE
+-- ==============================================================================
+ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ DEFAULT NULL;
+ALTER TABLE public.properties ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ DEFAULT NULL;
+ALTER TABLE public.service_tickets ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ DEFAULT NULL;
+ALTER TABLE public.service_agreements ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ DEFAULT NULL;
+ALTER TABLE public.time_entries ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ DEFAULT NULL;
+ALTER TABLE public.client_notes ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ DEFAULT NULL;
+ALTER TABLE public.territory_zones ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ DEFAULT NULL;
+
+-- 4) APPLY TRIGGERS
+-- ==============================================================================
+DO $$
+DECLARE
+    t text;
+BEGIN
+    FOR t IN 
+        SELECT unnest(ARRAY['customers', 'properties', 'service_tickets', 'service_agreements', 'time_entries', 'client_notes', 'territory_zones', 'profiles'])
+    LOOP
+        EXECUTE format('DROP TRIGGER IF EXISTS audit_trigger ON public.%I', t);
+        EXECUTE format('CREATE TRIGGER audit_trigger AFTER INSERT OR UPDATE OR DELETE ON public.%I FOR EACH ROW EXECUTE FUNCTION public.audit_trigger_func()', t);
+    END LOOP;
+END;
+$$;
+
+
+-- 5) GOD MODE RLS FOR TIME ENTRIES (OVERRIDING THE RESTRICTIONS)
+-- ==============================================================================
+-- We explicitly grant admins/owners full control over time entries (Insert, Update, Delete)
+DROP POLICY IF EXISTS "Users can insert their own time entries" ON public.time_entries;
+CREATE POLICY "Users can insert their own time entries OR Admin override"
+ON public.time_entries FOR INSERT WITH CHECK (
+  auth.uid() = user_id OR EXISTS (SELECT 1 FROM public.profiles p WHERE p.id = auth.uid() AND p.role IN ('admin', 'owner'))
+);
+
+DROP POLICY IF EXISTS "Users can update their own time entries" ON public.time_entries;
+CREATE POLICY "Users can update their own time entries OR Admin override"
+ON public.time_entries FOR UPDATE USING (
+  auth.uid() = user_id OR EXISTS (SELECT 1 FROM public.profiles p WHERE p.id = auth.uid() AND p.role IN ('admin', 'owner'))
+);
+
+DROP POLICY IF EXISTS "Admins can delete time entries" ON public.time_entries;
+CREATE POLICY "Admins can delete time entries"
+ON public.time_entries FOR DELETE USING (
+  EXISTS (SELECT 1 FROM public.profiles p WHERE p.id = auth.uid() AND p.role IN ('admin', 'owner'))
+);
+
+-- Realtime for audit_logs
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'audit_logs') THEN
+    EXECUTE 'ALTER PUBLICATION supabase_realtime ADD TABLE public.audit_logs';
+  END IF;
+END $$;
