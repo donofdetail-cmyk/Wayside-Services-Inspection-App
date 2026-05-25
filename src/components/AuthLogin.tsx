@@ -66,21 +66,39 @@ export function AuthLogin({ onLogin }: Props) {
       .from('profiles')
       .select('*')
       .eq('id', userId)
-      .single();
+      .maybeSingle();
 
     if (profileError) throw profileError;
 
-    if (profile.is_active === false) {
+    // Auto-create profile if missing (trigger failed or race condition)
+    let userProfile = profile;
+    if (!userProfile) {
+      const { data: newProfile, error: insertError } = await supabase
+        .from('profiles')
+        .insert([{
+          id: userId,
+          full_name: session.user.user_metadata?.full_name || 'New User',
+          role: session.user.user_metadata?.role || selectedPortal || 'technician',
+          is_active: true
+        }])
+        .select()
+        .single();
+        
+      if (insertError) throw new Error('Failed to create user profile: ' + insertError.message);
+      userProfile = newProfile;
+    }
+
+    if (userProfile.is_active === false) {
       await supabase.auth.signOut();
       throw new Error('Your account has been deactivated. Please contact an administrator.');
     }
 
-    if (profile.role !== selectedPortal && profile.role !== 'admin') {
+    if (userProfile.role !== selectedPortal && userProfile.role !== 'admin') {
       await supabase.auth.signOut();
       throw new Error(`Unauthorized. This portal requires ${selectedPortal} access.`);
     }
 
-    onLogin(session, profile, selectedPortal);
+    onLogin(session, userProfile, selectedPortal);
   };
 
   return (
