@@ -164,7 +164,11 @@ export default function AdminApp() {
 
     return (
       <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-
+        <div className="flex justify-between items-center">
+          <h3 className="text-xl font-bold text-deep-forest flex items-center gap-2">
+            <LayoutDashboard className="w-5 h-5 text-amber-porch" /> Overview
+          </h3>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="bg-white p-6 rounded-2xl shadow-xl border border-deep-forest/5 flex flex-col items-center justify-center text-center">
             <div className="w-16 h-16 bg-pathway-green/10 text-pathway-green rounded-full flex items-center justify-center mb-4">
@@ -248,7 +252,7 @@ export default function AdminApp() {
     <div className="bg-white rounded-2xl shadow-xl border border-deep-forest/5 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="p-6 border-b border-deep-forest/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <h3 className="text-xl font-bold text-deep-forest flex items-center gap-2">
-          <ClipboardList className="w-5 h-5 text-pathway-green" /> Inspection Reports
+          <ClipboardList className="w-5 h-5 text-pathway-green" /> Inspections
         </h3>
         <div className="flex items-center gap-3">
           <div className="relative w-full sm:w-64">
@@ -651,9 +655,9 @@ export default function AdminApp() {
         <div className="p-6 border-b border-deep-forest/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <h3 className="text-xl font-bold text-deep-forest flex items-center gap-2">
-              <Users className="w-5 h-5 text-amber-porch" /> Unified Client Roster
+              <Users className="w-5 h-5 text-amber-porch" /> Clients
             </h3>
-            <span className="bg-deep-forest/5 text-deep-forest px-3 py-1 rounded-full text-xs font-bold uppercase">{clientsList.length} Clients</span>
+            <span className="bg-deep-forest/5 text-deep-forest px-3 py-1 rounded-full text-xs font-bold uppercase">{clientsList.length} Total</span>
           </div>
           <div className="relative w-full sm:w-64">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-deep-forest/40" />
@@ -729,7 +733,7 @@ export default function AdminApp() {
       <div className="h-full flex flex-col animate-in fade-in slide-in-from-bottom-4 duration-500">
         <div className="flex justify-between items-center mb-6 shrink-0">
           <h3 className="text-xl font-bold text-deep-forest flex items-center gap-2">
-            <Kanban className="w-5 h-5 text-amber-porch" /> Sales Pipeline
+            <Kanban className="w-5 h-5 text-amber-porch" /> Pipeline
           </h3>
         </div>
         
@@ -801,7 +805,7 @@ export default function AdminApp() {
     <div className="bg-white rounded-2xl shadow-xl border border-deep-forest/5 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="p-6 border-b border-deep-forest/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <h3 className="text-xl font-bold text-deep-forest flex items-center gap-2">
-          <MapPin className="w-5 h-5 text-amber-porch" /> D2D Leads
+          <MapPin className="w-5 h-5 text-amber-porch" /> Leads
         </h3>
         <div className="flex items-center gap-3">
           <div className="relative w-full sm:w-64">
@@ -897,6 +901,11 @@ export default function AdminApp() {
 
     return (
       <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <div className="flex justify-between items-center">
+          <h3 className="text-xl font-bold text-deep-forest flex items-center gap-2">
+            <BarChart3 className="w-5 h-5 text-amber-porch" /> Analytics
+          </h3>
+        </div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-white p-6 rounded-2xl shadow-xl border border-deep-forest/5">
             <h3 className="font-bold text-deep-forest mb-6 flex items-center gap-2"><BarChart3 className="w-5 h-5 text-amber-porch" /> 7-Day Performance</h3>
@@ -941,7 +950,7 @@ export default function AdminApp() {
     return (
       <div className="bg-white rounded-2xl shadow-xl border border-deep-forest/5 p-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
         <h3 className="text-xl font-bold text-deep-forest flex items-center gap-2 mb-6">
-          <CalendarIcon className="w-5 h-5 text-amber-porch" /> Dispatch & Scheduling
+          <CalendarIcon className="w-5 h-5 text-amber-porch" /> Dispatch
         </h3>
         <div className="space-y-4">
           {scheduledLeads.length === 0 ? <p className="text-deep-forest/50">No scheduled leads.</p> : scheduledLeads.map(lead => (
@@ -995,7 +1004,7 @@ export default function AdminApp() {
         <div className="bg-white rounded-2xl shadow-xl border border-deep-forest/5 p-6">
           <div className="flex justify-between items-center mb-6">
             <h3 className="text-xl font-bold text-deep-forest flex items-center gap-2">
-              <Inbox className="w-5 h-5 text-amber-porch" /> CRM Action Center
+              <Inbox className="w-5 h-5 text-amber-porch" /> Action Center
             </h3>
           </div>
           
@@ -1139,7 +1148,7 @@ export default function AdminApp() {
     <div className="bg-white rounded-2xl shadow-xl border border-deep-forest/5 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="p-6 border-b border-deep-forest/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <h3 className="text-xl font-bold text-deep-forest flex items-center gap-2">
-          <Users className="w-5 h-5 text-deep-forest" /> Employee Roster
+          <Users className="w-5 h-5 text-deep-forest" /> Team
         </h3>
       </div>
       <div className="divide-y divide-deep-forest/5">
@@ -1200,6 +1209,11 @@ export default function AdminApp() {
 
   const renderSettings = () => (
     <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="flex justify-between items-center">
+        <h3 className="text-xl font-bold text-deep-forest flex items-center gap-2">
+          <Settings className="w-5 h-5 text-amber-porch" /> Settings
+        </h3>
+      </div>
       <div className="bg-white rounded-2xl shadow-xl border border-deep-forest/5 p-6">
         <h3 className="text-xl font-bold text-deep-forest mb-4">Company Profile</h3>
         <div className="grid gap-4 max-w-md">
@@ -1304,7 +1318,7 @@ export default function AdminApp() {
     { id: 'dispatch' as AdminTab, label: 'Dispatch', icon: CalendarIcon },
     { id: 'action_center' as AdminTab, label: 'Action Center', icon: Inbox },
     { id: 'inspections' as AdminTab, label: 'Inspections', icon: ClipboardList },
-    { id: 'leads' as AdminTab, label: 'Lead Map', icon: MapPin },
+    { id: 'leads' as AdminTab, label: 'Leads', icon: MapPin },
     { id: 'team' as AdminTab, label: 'Team', icon: Users },
     { id: 'settings' as AdminTab, label: 'Settings', icon: Settings }
   ];
