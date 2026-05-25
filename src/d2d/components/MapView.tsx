@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { D2DLead, STATUS_COLORS, STATUS_LABELS } from '../types';
 import { Loader2, Navigation, X, MapPin } from 'lucide-react';
 import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
 
 // Fix Leaflet default icon paths in Vite
 delete (L.Icon.Default.prototype as any)._getIconUrl;
