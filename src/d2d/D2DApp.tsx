@@ -84,7 +84,7 @@ export default function D2DApp() {
       {/* ── Mobile Menu Overlay ── */}
       {menuOpen && (
         <div
-          className="fixed inset-0 z-50 flex md:hidden"
+          className="fixed inset-0 z-[9999] flex md:hidden"
           onClick={() => setMenuOpen(false)}
         >
           {/* Backdrop */}
