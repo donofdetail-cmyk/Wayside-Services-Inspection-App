@@ -907,6 +907,16 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
     );
   };
 
+  const handleRemoveFromZone = async (propertyId: string) => {
+    const { error } = await supabase.from('properties').update({ territory_zone_id: null }).eq('id', propertyId);
+    if (!error) {
+      setProperties(prev => prev.map(p => p.id === propertyId ? { ...p, territory_zone_id: null } : p));
+      toast.success("Client removed from territory");
+    } else {
+      toast.error("Failed to remove client from territory");
+    }
+  };
+
   const renderTerritories = () => {
     const activeZones = territoryZones.filter(z => z.is_active);
     const inactiveZones = territoryZones.filter(z => !z.is_active);
@@ -951,15 +961,26 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
                         </div>
                       )}
                     </div>
-                    {tickets.length > 0 && (
-                      <div className="flex flex-wrap gap-2 mt-2">
-                        {tickets.slice(0, 3).map((t, i) => (
-                          <span key={i} className="text-[10px] font-bold uppercase tracking-wider bg-deep-forest/5 text-deep-forest/70 px-2 py-1 rounded">
-                            {t.type} {t.status}
-                          </span>
-                        ))}
-                      </div>
-                    )}
+                    <div className="flex justify-between items-center mt-4 pt-4 border-t border-deep-forest/5">
+                      {tickets.length > 0 ? (
+                        <div className="flex flex-wrap gap-2">
+                          {tickets.slice(0, 3).map((t, i) => (
+                            <span key={i} className="text-[10px] font-bold uppercase tracking-wider bg-deep-forest/5 text-deep-forest/70 px-2 py-1 rounded">
+                              {t.type} {t.status}
+                            </span>
+                          ))}
+                        </div>
+                      ) : <div />}
+                      
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleRemoveFromZone(p.id)}
+                        className="h-7 text-red-500 hover:text-red-600 hover:bg-red-50 text-xs px-3"
+                      >
+                        Remove from Zone
+                      </Button>
+                    </div>
                   </div>
                 );
               })
