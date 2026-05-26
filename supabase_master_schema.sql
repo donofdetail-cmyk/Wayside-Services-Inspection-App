@@ -232,6 +232,8 @@ CREATE TABLE IF NOT EXISTS public.time_entries (
   location_in TEXT,
   location_out TEXT,
   status TEXT NOT NULL CHECK (status IN ('clocked_in', 'clocked_out')),
+  edited_by_admin BOOLEAN DEFAULT false,
+  admin_notes TEXT,
   deleted_at TIMESTAMPTZ DEFAULT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

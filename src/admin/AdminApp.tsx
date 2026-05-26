@@ -10,7 +10,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveCont
 import { Logo } from '../components/Logo';
 import { DispatchMap } from './components/DispatchMap';
 
-type AdminTab = 'dashboard' | 'clients' | 'scheduling' | 'action_center' | 'inspections' | 'leads' | 'territories' | 'team' | 'settings';
+type AdminTab = 'dashboard' | 'clients' | 'scheduling' | 'action_center' | 'inspections' | 'leads' | 'territories' | 'team' | 'settings' | 'payroll';
 import { TimesheetDashboard } from './components/TimesheetDashboard';
 export default function AdminApp({ session, profile }: { session: any, profile: any }) {
   const [adminName, setAdminName] = useState<string | null>(profile?.full_name || null);
@@ -47,6 +47,10 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
   const [zoneModalOpen, setZoneModalOpen] = useState(false);
   const [zoneForm, setZoneForm] = useState({ name: '', color: '#1D3B34' });
   const [selectedZone, setSelectedZone] = useState<TerritoryZone | null>(null);
+
+  // Phase 13: Time Tracking & Audit Logs
+  const [timeEntries, setTimeEntries] = useState<any[]>([]);
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
 
   const [clientModalOpen, setClientModalOpen] = useState(false);
   const [clientForm, setClientForm] = useState<{id?: string, full_name: string, email: string, phone: string}>({ full_name: '', email: '', phone: '' });
@@ -86,7 +90,7 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
             { id: '3', name: '6-Month Seasonal Nurture', type: 'email', content: 'Hi {{name}}, the seasons are changing! It’s a great time for a quick maintenance check on your property at {{address}}.' }
           ]);
         }
-        const [inspectionsRes, leadsRes, profilesRes, templatesRes, touchpointsRes, notesRes, commsRes, zonesRes, ticketsRes, agreementsRes, propertiesRes, customersRes] = await Promise.all([
+        const [inspectionsRes, leadsRes, profilesRes, templatesRes, touchpointsRes, notesRes, commsRes, zonesRes, ticketsRes, agreementsRes, propertiesRes, customersRes, timeEntriesRes, auditLogsRes] = await Promise.all([
           supabase.from('inspections').select('*').order('created_at', { ascending: false }),
           supabase.from('d2d_leads').select('*').order('created_at', { ascending: false }),
           supabase.from('profiles').select('*').order('created_at', { ascending: true }),
@@ -98,7 +102,9 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
           supabase.from('service_tickets').select('*').order('created_at', { ascending: false }),
           supabase.from('service_agreements').select('*'),
           supabase.from('properties').select('*'),
-          supabase.from('customers').select('*')
+          supabase.from('customers').select('*'),
+          supabase.from('time_entries').select('*').order('created_at', { ascending: false }),
+          supabase.from('audit_logs').select('*').eq('table_name', 'time_entries').order('timestamp', { ascending: false })
         ]);
         
         if (inspectionsRes.error) throw inspectionsRes.error;
@@ -118,6 +124,8 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
         setServiceAgreements(agreementsRes.data || []);
         setProperties(propertiesRes.data || []);
         setCustomers(customersRes.data || []);
+        setTimeEntries(timeEntriesRes.data || []);
+        setAuditLogs(auditLogsRes.data || []);
       } catch (err: any) {
         console.error('Fetch error:', err);
         toast.error('Failed to load dashboard data');
@@ -1918,11 +1926,6 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
           ))}
         </div>
       </div>
-
-      {/* ── Timesheets ── */}
-      <div className="mt-8">
-        <TimesheetDashboard profiles={profiles} />
-      </div>
     </div>
   );
 
@@ -2038,8 +2041,17 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
     { id: 'leads' as AdminTab, label: 'Acquisition (D2D)', icon: MapPin },
     { id: 'territories' as AdminTab, label: 'Territories', icon: Map },
     { id: 'team' as AdminTab, label: 'Team', icon: Users },
+    { id: 'payroll' as AdminTab, label: 'Time & Payroll', icon: Clock },
     { id: 'settings' as AdminTab, label: 'Settings', icon: Settings }
   ];
+
+  const renderPayroll = () => {
+    return (
+      <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <TimesheetDashboard profiles={profiles} auditLogs={auditLogs} />
+      </div>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-linen-white text-deep-forest font-sans flex flex-col md:flex-row w-full overflow-hidden">
@@ -2190,6 +2202,7 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
             {activeTab === 'leads' && renderLeads()}
             {activeTab === 'territories' && renderTerritories()}
             {activeTab === 'team' && renderTeam()}
+            {activeTab === 'payroll' && renderPayroll()}
             {activeTab === 'settings' && renderSettings()}
           </>
         )}
