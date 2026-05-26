@@ -2,7 +2,7 @@ import React from 'react';
 import { useState, useEffect } from 'react';
 import { loadTemplate, saveTemplate, loadHistory, clearDraft } from '../storage';
 import { DEFAULT_CHECKLIST_ITEMS } from '../types';
-import { Save, Plus, Trash2, RotateCcw, Download, Upload, Settings as SettingsIcon } from 'lucide-react';
+import { Save, Download, Upload, Settings as SettingsIcon } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { set } from 'idb-keyval';
@@ -127,50 +127,26 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
       {/* ── Settings Content ── */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         
-        {/* Left Column: Checklist Editor */}
+        {/* Left Column: Checklist Viewer */}
         <div className="md:col-span-2 flex flex-col gap-4">
           <div className="bg-white rounded-2xl border border-deep-forest/10 p-5 flex flex-col gap-4">
             <div className="flex items-center justify-between border-b border-deep-forest/10 pb-3">
               <div>
                 <h3 className="font-bold text-deep-forest">Checklist Template</h3>
-                <p className="text-xs text-deep-forest/60 mt-0.5">Edit the items that appear on new inspections. The last item is treated as the "Seasonal" task.</p>
+                <p className="text-xs text-deep-forest/60 mt-0.5">These are the required inspection items managed by your Admin.</p>
               </div>
-              <button
-                onClick={handleResetDefault}
-                className="text-[10px] uppercase font-bold text-deep-forest/40 hover:text-deep-forest flex items-center gap-1 transition-colors bg-deep-forest/5 px-2 py-1.5 rounded-lg"
-              >
-                <RotateCcw className="w-3 h-3" />
-                Reset Default
-              </button>
             </div>
 
             <div className="flex flex-col gap-3">
               {templateItems.map((item, index) => (
                 <div key={index} className="flex items-center gap-2">
                   <span className="text-[10px] font-bold text-deep-forest/30 w-4 text-right shrink-0">{index + 1}.</span>
-                  <Input
-                    value={item}
-                    onChange={(e) => handleUpdateItem(index, e.target.value)}
-                    className="flex-1 bg-linen-white/50 border-deep-forest/10 focus-visible:ring-pathway-green"
-                  />
-                  <button
-                    onClick={() => handleRemoveItem(index)}
-                    className="p-2 text-deep-forest/30 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors shrink-0"
-                    title="Remove Item"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  <div className="flex-1 bg-linen-white/50 border border-deep-forest/5 p-2 rounded-lg text-sm text-deep-forest/80">
+                    {item}
+                  </div>
                 </div>
               ))}
             </div>
-
-            <button
-              onClick={handleAddItem}
-              className="mt-2 w-full py-3 rounded-xl border border-dashed border-deep-forest/20 text-deep-forest/50 hover:text-pathway-green hover:border-pathway-green hover:bg-pathway-green/5 transition-all text-sm font-bold flex items-center justify-center gap-2"
-            >
-              <Plus className="w-4 h-4" />
-              Add Checklist Item
-            </button>
           </div>
         </div>
 

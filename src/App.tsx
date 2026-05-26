@@ -9,7 +9,6 @@ import { generateAndDownloadPDF } from './pdfGenerator';
 import { AuthLogin } from './components/AuthLogin';
 import { supabase } from './d2d/supabaseClient';
 import { Toaster, toast } from 'sonner';
-import { SignaturePad } from './components/SignaturePad';
 import {
   saveDraft, loadDraft, clearDraft,
   saveCompletedInspection, loadHistory, loadTemplate, syncOfflineInspections
@@ -44,8 +43,6 @@ export default function App({ session, profile }: { session: any, profile: any }
   // ── Inspection data ───────────────────────────────────────────────────────
   const [clientData, setClientData] = useState<ClientData>(EMPTY_CLIENT);
   const [checklistData, setChecklistData] = useState<Record<number, ChecklistItemData>>({});
-  const [clientSignature, setClientSignature] = useState('');
-  const [technicianSignature, setTechnicianSignature] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
 
   // ── Draft / resume ────────────────────────────────────────────────────────
@@ -99,8 +96,9 @@ export default function App({ session, profile }: { session: any, profile: any }
     setTimerActive(true);
     if (intervalRef.current) clearInterval(intervalRef.current);
     if (displayRef.current) clearInterval(displayRef.current);
+    const startTime = Date.now() - (seed * 1000);
     intervalRef.current = setInterval(() => {
-      timerRef.current += 1;
+      timerRef.current = Math.floor((Date.now() - startTime) / 1000);
     }, 1000);
     displayRef.current = setInterval(() => {
       setFormattedTime(formatSeconds(timerRef.current));
@@ -114,19 +112,7 @@ export default function App({ session, profile }: { session: any, profile: any }
     return timerRef.current;
   }, []);
 
-  // Pause/resume timer when tab visibility changes
-  useEffect(() => {
-    if (!timerActive) return;
-    const handleVisibility = () => {
-      if (document.hidden) {
-        if (intervalRef.current) clearInterval(intervalRef.current);
-      } else {
-        intervalRef.current = setInterval(() => { timerRef.current += 1; }, 1000);
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibility);
-    return () => document.removeEventListener('visibilitychange', handleVisibility);
-  }, [timerActive]);
+  // Pause/resume timer when tab visibility changes is no longer needed with absolute timestamps
 
   // Cleanup timer on unmount
   useEffect(() => () => {
@@ -211,8 +197,6 @@ export default function App({ session, profile }: { session: any, profile: any }
         id: existing?.id ?? crypto.randomUUID(),
         clientInfo: clientData,
         checklistData,
-        clientSignature,
-        technicianSignature,
         startedAt: existing?.startedAt ?? new Date().toISOString(),
         lastSavedAt: new Date().toISOString(),
         elapsedSeconds: timerRef.current,
@@ -220,7 +204,7 @@ export default function App({ session, profile }: { session: any, profile: any }
       await saveDraft(updated);
     }, 2000);
     return () => { if (autoSaveRef.current) clearTimeout(autoSaveRef.current); };
-  }, [checklistData, clientData, step, clientSignature, technicianSignature]);
+  }, [checklistData, clientData, step]);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
   const updateClientInfo = (field: keyof ClientData, value: string) => {
@@ -241,12 +225,9 @@ export default function App({ session, profile }: { session: any, profile: any }
     stopTimer();
     setClientData(EMPTY_CLIENT);
     setChecklistData({});
-    setClientSignature('');
-    setTechnicianSignature('');
     setDraft(null);
     setScheduledJobs([]);
     setShowResumeBanner(false);
-    setStep('login');
   };
 
   const handleStartChecklist = (e: React.FormEvent) => {
@@ -261,8 +242,6 @@ export default function App({ session, profile }: { session: any, profile: any }
     if (!draft) return;
     setClientData(draft.clientInfo);
     setChecklistData(draft.checklistData);
-    if (draft.clientSignature) setClientSignature(draft.clientSignature);
-    if (draft.technicianSignature) setTechnicianSignature(draft.technicianSignature);
     setShowResumeBanner(false);
     startTimer(draft.elapsedSeconds);
     setStep('checklist');
@@ -284,16 +263,6 @@ export default function App({ session, profile }: { session: any, profile: any }
       }
     }
 
-    if (!technicianSignature) {
-      toast.error('Technician signature is required');
-      return;
-    }
-    
-    if (!clientSignature) {
-      toast.error('Client signature is required');
-      return;
-    }
-
     const elapsed = stopTimer();
     setElapsedOnComplete(elapsed);
     setStep('generating');
@@ -302,8 +271,6 @@ export default function App({ session, profile }: { session: any, profile: any }
       const report: InspectionReport = { 
         clientInfo: clientData, 
         checklist: checklistData,
-        clientSignature,
-        technicianSignature
       };
       const pdfBlob = await generateAndDownloadPDF(report, templateItems);
       await saveCompletedInspection(report, elapsed, clientData.technicianId || '', pdfBlob);
@@ -328,8 +295,6 @@ export default function App({ session, profile }: { session: any, profile: any }
       technicianId: prev.technicianId 
     }));
     setChecklistData({});
-    setClientSignature('');
-    setTechnicianSignature('');
     stopTimer();
     setStep('dashboard');
     if (clientData.technicianId) fetchScheduledJobs(clientData.technicianId);
@@ -466,7 +431,7 @@ export default function App({ session, profile }: { session: any, profile: any }
                   <div className="flex flex-col items-center bg-pathway-green px-3 py-1 rounded-xl shadow-inner">
                     <span className="text-[10px] uppercase font-bold text-white/80">Progress</span>
                     <span className="text-base font-bold leading-none text-white">
-                      {Math.round((Object.values(checklistData).filter((i: any) => i && i.status).length / templateItems.length) * 100)}%
+                      {templateItems.length > 0 ? Math.round((Object.values(checklistData).filter((i: any) => i && i.status).length / templateItems.length) * 100) : 0}%
                     </span>
                   </div>
                 )}
@@ -535,7 +500,7 @@ export default function App({ session, profile }: { session: any, profile: any }
                     <div className="flex flex-col items-center bg-pathway-green px-3 py-1 rounded-xl shadow-inner">
                       <span className="text-[10px] uppercase font-bold text-white/80">Progress</span>
                       <span className="text-base font-bold leading-none text-white">
-                        {Math.round((Object.values(checklistData).filter((i: any) => i && i.status).length / templateItems.length) * 100)}%
+                        {templateItems.length > 0 ? Math.round((Object.values(checklistData).filter((i: any) => i && i.status).length / templateItems.length) * 100) : 0}%
                       </span>
                     </div>
                     <TimerBadge formatted={formattedTime} />
@@ -568,15 +533,7 @@ export default function App({ session, profile }: { session: any, profile: any }
                 </div>
                 <div className="flex gap-2 w-full sm:w-auto">
                   <Button variant="outline" onClick={() => { clearDraft(); setDraft(null); setShowResumeBanner(false); }} className="flex-1 sm:flex-none border-amber-porch/20 text-deep-forest hover:bg-amber-porch/10">Discard</Button>
-                  <Button onClick={() => {
-                    setClientData(draft.clientInfo);
-                    setChecklistData(draft.checklistData);
-                    setClientSignature(draft.clientSignature);
-                    setTechnicianSignature(draft.technicianSignature);
-                    setShowResumeBanner(false);
-                    setStep('checklist');
-                    startTimer(draft.elapsedSeconds || 0);
-                  }} className="flex-1 sm:flex-none bg-amber-porch hover:bg-amber-porch/90 text-white font-bold border-none">Resume</Button>
+                  <Button onClick={handleResumeDraft} className="flex-1 sm:flex-none bg-amber-porch hover:bg-amber-porch/90 text-white font-bold border-none">Resume</Button>
                 </div>
               </div>
             )}
@@ -683,6 +640,12 @@ export default function App({ session, profile }: { session: any, profile: any }
                   </div>
                 </div>
                 <div>
+                  <Label htmlFor="clientPhone" className="text-[10px] font-bold uppercase text-deep-forest/50 block mb-1.5">Client Phone</Label>
+                  <div className="relative">
+                    <Input id="clientPhone" type="tel" placeholder="(555) 555-5555" value={clientData.clientPhone || ''} onChange={(e) => updateClientInfo('clientPhone', e.target.value)} className="w-full pl-4 pr-4 py-3 rounded-xl border border-deep-forest/10 text-deep-forest text-sm focus:outline-none focus:border-pathway-green focus:ring-2 focus:ring-pathway-green/20 transition-all bg-linen-white/50 h-auto shadow-none" />
+                  </div>
+                </div>
+                <div>
                   <Label htmlFor="propertyAddress" className="text-[10px] font-bold uppercase text-deep-forest/50 block mb-1.5">Property Address *</Label>
                   <div className="relative">
                     <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-deep-forest/30 pointer-events-none" />
@@ -694,6 +657,40 @@ export default function App({ session, profile }: { session: any, profile: any }
                   <div className="relative">
                     <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-deep-forest/30 pointer-events-none" />
                     <Input id="date" type="date" required value={clientData.date} onChange={(e) => updateClientInfo('date', e.target.value)} className="w-full pl-10 pr-4 py-3 rounded-xl border border-deep-forest/10 text-deep-forest text-sm focus:outline-none focus:border-pathway-green focus:ring-2 focus:ring-pathway-green/20 transition-all bg-linen-white/50 h-auto shadow-none" />
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-3 mt-2 border-t border-deep-forest/10 pt-4">
+                  <Label className="flex items-start gap-3 cursor-pointer group">
+                    <div className="relative flex items-center justify-center mt-0.5">
+                      <input type="checkbox" required checked={clientData.agreedToTos || false} onChange={(e) => updateClientInfo('agreedToTos', e.target.checked as any)} className="peer appearance-none w-4 h-4 rounded border border-deep-forest/20 checked:bg-pathway-green checked:border-pathway-green transition-all" />
+                      <svg className="absolute w-3 h-3 text-white pointer-events-none opacity-0 peer-checked:opacity-100" viewBox="0 0 14 10" fill="none"><path d="M1 5L5 9L13 1" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                    </div>
+                    <span className="text-xs text-deep-forest/80 leading-relaxed">
+                      <strong>Required:</strong> I have read and agree to the Terms of Service &amp; Liability Waiver. I authorize Wayside to perform the inspection.
+                    </span>
+                  </Label>
+                  
+                  <Label className="flex items-start gap-3 cursor-pointer group">
+                    <div className="relative flex items-center justify-center mt-0.5">
+                      <input type="checkbox" checked={clientData.smsConsentGranted || false} onChange={(e) => updateClientInfo('smsConsentGranted', e.target.checked as any)} className="peer appearance-none w-4 h-4 rounded border border-deep-forest/20 checked:bg-pathway-green checked:border-pathway-green transition-all" />
+                      <svg className="absolute w-3 h-3 text-white pointer-events-none opacity-0 peer-checked:opacity-100" viewBox="0 0 14 10" fill="none"><path d="M1 5L5 9L13 1" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                    </div>
+                    <span className="text-xs text-deep-forest/80 leading-relaxed">
+                      I consent to receive automated SMS updates regarding my service, maintenance reminders, and promotions.
+                    </span>
+                  </Label>
+
+                  <div className="bg-linen-white/50 p-3 rounded-xl border border-deep-forest/5">
+                    <Label className="flex items-start gap-3 cursor-pointer group">
+                      <div className="relative flex items-center justify-center mt-0.5">
+                        <input type="checkbox" checked={clientData.optedOutOfSale || false} onChange={(e) => updateClientInfo('optedOutOfSale', e.target.checked as any)} className="peer appearance-none w-4 h-4 rounded border border-deep-forest/20 checked:bg-amber-porch checked:border-amber-porch transition-all" />
+                        <svg className="absolute w-3 h-3 text-white pointer-events-none opacity-0 peer-checked:opacity-100" viewBox="0 0 14 10" fill="none"><path d="M1 5L5 9L13 1" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                      </div>
+                      <span className="text-[11px] text-deep-forest/70 leading-relaxed">
+                        <strong>Nevada Privacy Notice (NPICICA):</strong> Check this box to expressly opt-out of the sale of your personal information. <a href="#" className="underline hover:text-pathway-green">Privacy Policy</a>
+                      </span>
+                    </Label>
                   </div>
                 </div>
                 <button type="submit" className="w-full bg-pathway-green text-white py-4 rounded-xl font-bold text-[15px] hover:brightness-110 transition-all shadow-lg shadow-pathway-green/20 mt-2 flex items-center justify-center gap-2">
@@ -736,18 +733,6 @@ export default function App({ session, profile }: { session: any, profile: any }
             </div>
 
             <div className="mt-10 pt-6 border-t border-deep-forest/10 flex flex-col gap-8">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <SignaturePad 
-                  label="Technician Signature *" 
-                  onSign={setTechnicianSignature} 
-                  initialSignature={technicianSignature} 
-                />
-                <SignaturePad 
-                  label="Client Signature *" 
-                  onSign={setClientSignature} 
-                  initialSignature={clientSignature} 
-                />
-              </div>
               <div className="flex justify-end">
                 <button
                   type="button"

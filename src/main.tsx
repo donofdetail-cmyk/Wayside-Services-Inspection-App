@@ -21,11 +21,6 @@ function RootApp() {
   const [portal, setPortal] = useState<PortalType | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Check if it's the customer portal (no auth required)
-  if (window.location.pathname.startsWith('/portal')) {
-    return <CustomerPortal />;
-  }
-
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       if (data.session) {
@@ -62,6 +57,11 @@ function RootApp() {
     };
   }, []);
 
+  // Check if it's the customer portal (no auth required)
+  if (window.location.pathname.startsWith('/portal')) {
+    return <CustomerPortal />;
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-linen-white flex flex-col items-center justify-center">
@@ -83,7 +83,7 @@ function RootApp() {
     );
   }
 
-  if (portal === 'admin') return <AdminApp session={session} profile={profile} />;
+  if (portal === 'admin' || portal === 'owner') return <AdminApp session={session} profile={profile} />;
   if (portal === 'rep') return <D2DApp session={session} profile={profile} />;
   return <App session={session} profile={profile} />;
 }

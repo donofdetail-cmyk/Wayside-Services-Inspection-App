@@ -29,17 +29,19 @@ export interface ChecklistItemData {
 export interface ClientData {
   clientName: string;
   clientEmail: string;
+  clientPhone?: string;
   propertyAddress: string;
   date: string;
   technicianName: string;
   technicianId?: string;
+  agreedToTos?: boolean;
+  smsConsentGranted?: boolean;
+  optedOutOfSale?: boolean;
 }
 
 export interface InspectionReport {
   clientInfo: ClientData;
   checklist: Record<number, ChecklistItemData>;
-  clientSignature?: string; // base64 image
-  technicianSignature?: string; // base64 image
 }
 
 // In-progress inspection auto-saved to localStorage
@@ -47,8 +49,6 @@ export interface InspectionDraft {
   id: string;
   clientInfo: ClientData;
   checklistData: Record<number, ChecklistItemData>;
-  clientSignature?: string;
-  technicianSignature?: string;
   startedAt: string;       // ISO timestamp
   lastSavedAt: string;     // ISO timestamp
   elapsedSeconds: number;  // accumulated stopwatch time
@@ -107,9 +107,9 @@ export interface ServiceTicket {
   scheduled_start?: string;
   scheduled_end?: string;
   completed_at?: string;
-  status: 'pending' | 'in_progress' | 'completed' | 'cancelled';
+  status: 'pending' | 'in_progress' | 'completed' | 'skipped' | 'cancelled';
   assigned_tech_id?: string;
-  type: 'initial' | 'recurring' | 'seasonal' | 'repair';
+  type: 'initial' | 'recurring' | 'reservice' | 'seasonal' | 'repair';
   notes?: string;
   created_at: string;
 }

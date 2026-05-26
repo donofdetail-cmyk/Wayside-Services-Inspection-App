@@ -138,28 +138,6 @@ export async function generateAndDownloadPDF(
     }
   }
 
-  // Signatures
-  doc.addPage();
-  currentY = 20;
-  doc.setFontSize(16);
-  doc.text('Sign Off', 14, currentY);
-  currentY += 15;
-
-  doc.setFontSize(12);
-  doc.text('Technician Signature:', 14, currentY);
-  if (report.technicianSignature) {
-    try {
-      doc.addImage(report.technicianSignature, 'PNG', 14, currentY + 5, 80, 30);
-    } catch(e) {}
-  }
-  
-  currentY += 50;
-  doc.text('Client Signature:', 14, currentY);
-  if (report.clientSignature) {
-    try {
-      doc.addImage(report.clientSignature, 'PNG', 14, currentY + 5, 80, 30);
-    } catch(e) {}
-  }
 
   // Download PDF
   const pdfFileName = `${report.clientInfo.clientName.replace(/\s+/g, '_')}_Inspection_Report.pdf`;

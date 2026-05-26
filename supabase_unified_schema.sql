@@ -64,78 +64,7 @@ CREATE TABLE IF NOT EXISTS public.d2d_leads (
 );
 
 -- ==============================================================================
--- 4) Inspections Table
--- ==============================================================================
-CREATE TABLE IF NOT EXISTS public.inspections (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  technician_id UUID NOT NULL REFERENCES auth.users(id),
-  client_name TEXT NOT NULL,
-  client_email TEXT,
-  client_phone TEXT,
-  property_address TEXT NOT NULL,
-  duration_seconds INTEGER,
-  checklist_data JSONB NOT NULL,
-  client_info JSONB,
-  client_signature TEXT,
-  technician_signature TEXT,
-  pdf_url TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
--- ==============================================================================
--- 5) Company Settings Table
--- ==============================================================================
-CREATE TABLE IF NOT EXISTS public.company_settings (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_name TEXT NOT NULL DEFAULT 'Wayside Services',
-  logo_url TEXT,
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-INSERT INTO public.company_settings (company_name)
-SELECT 'Wayside Services'
-WHERE NOT EXISTS (SELECT 1 FROM public.company_settings);
-
--- ==============================================================================
--- 6) Dynamic Checklists Table
--- ==============================================================================
-CREATE TABLE IF NOT EXISTS public.inspection_templates (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  order_index INTEGER NOT NULL,
-  question_text TEXT NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
--- Default Wayside Checklist 
--- (Commented out DELETE to prevent data loss on subsequent runs)
--- DELETE FROM public.inspection_templates;
-
-INSERT INTO public.inspection_templates (order_index, question_text) VALUES
-(1, 'HVAC Air Filter Inspection & Replacement'),
-(2, 'Visual Plumbing Inspection'),
-(3, 'Faucet & Fixture Performance Check'),
-(4, 'Light Switch & Receptacle Safety Check'),
-(5, 'Smoke & Carbon Monoxide Detector Status Check'),
-(6, 'Door & Window Operation Check'),
-(7, 'Garage Door Seal & Functionality Check'),
-(8, 'Exterior Visual Walk-Around'),
-(9, 'Weather Seal Inspection'),
-(10, '+ One Rotating Seasonal Preventative Task');
-
--- ==============================================================================
--- 7) Territory Zones
--- ==============================================================================
-CREATE TABLE IF NOT EXISTS public.territory_zones (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  name TEXT NOT NULL,
-  color TEXT DEFAULT '#1D3B34',
-  is_active BOOLEAN DEFAULT true,
-  deleted_at TIMESTAMPTZ DEFAULT NULL,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- ==============================================================================
--- 8) Customers
+-- 4) Customers
 -- ==============================================================================
 CREATE TABLE IF NOT EXISTS public.customers (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -152,7 +81,7 @@ CREATE TABLE IF NOT EXISTS public.customers (
 );
 
 -- ==============================================================================
--- 9) Properties
+-- 5) Properties
 -- ==============================================================================
 CREATE TABLE IF NOT EXISTS public.properties (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -160,6 +89,68 @@ CREATE TABLE IF NOT EXISTS public.properties (
   lat DOUBLE PRECISION,
   lng DOUBLE PRECISION,
   territory_zone_id UUID REFERENCES public.territory_zones(id) ON DELETE SET NULL,
+  deleted_at TIMESTAMPTZ DEFAULT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- ==============================================================================
+-- 6) Inspections Table (PII Centralized)
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.inspections (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  technician_id UUID NOT NULL REFERENCES auth.users(id),
+  customer_id UUID REFERENCES public.customers(id) ON DELETE SET NULL,
+  property_id UUID REFERENCES public.properties(id) ON DELETE SET NULL,
+  duration_seconds INTEGER,
+  checklist_data JSONB NOT NULL,
+  pdf_url TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ==============================================================================
+-- 7) Company Settings Table
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.company_settings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_name TEXT NOT NULL DEFAULT 'Wayside Services',
+  logo_url TEXT,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+INSERT INTO public.company_settings (company_name)
+SELECT 'Wayside Services'
+WHERE NOT EXISTS (SELECT 1 FROM public.company_settings);
+
+-- ==============================================================================
+-- 8) Dynamic Checklists Table
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.inspection_templates (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_index INTEGER NOT NULL,
+  question_text TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+INSERT INTO public.inspection_templates (order_index, question_text) VALUES
+(1, 'HVAC Air Filter Inspection & Replacement'),
+(2, 'Visual Plumbing Inspection'),
+(3, 'Faucet & Fixture Performance Check'),
+(4, 'Light Switch & Receptacle Safety Check'),
+(5, 'Smoke & Carbon Monoxide Detector Status Check'),
+(6, 'Door & Window Operation Check'),
+(7, 'Garage Door Seal & Functionality Check'),
+(8, 'Exterior Visual Walk-Around'),
+(9, 'Weather Seal Inspection'),
+(10, '+ One Rotating Seasonal Preventative Task');
+
+-- ==============================================================================
+-- 9) Territory Zones
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.territory_zones (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  name TEXT NOT NULL,
+  color TEXT DEFAULT '#1D3B34',
+  is_active BOOLEAN DEFAULT true,
   deleted_at TIMESTAMPTZ DEFAULT NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -201,7 +192,7 @@ CREATE TABLE IF NOT EXISTS public.service_tickets (
 -- ==============================================================================
 CREATE TABLE IF NOT EXISTS public.client_notes (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  property_address TEXT NOT NULL,
+  property_id UUID REFERENCES public.properties(id) ON DELETE CASCADE,
   content TEXT NOT NULL,
   author_name TEXT NOT NULL,
   deleted_at TIMESTAMPTZ DEFAULT NULL,
@@ -378,5 +369,17 @@ BEGIN
 END;
 $$;
 
--- Storage Bucket Setup (for PDFs)
-INSERT INTO storage.buckets (id, name, public) VALUES ('reports', 'reports', true) ON CONFLICT (id) DO NOTHING;
+-- ==============================================================================
+-- STORAGE BUCKETS
+-- ==============================================================================
+INSERT INTO storage.buckets (id, name, public) VALUES ('reports', 'reports', false) ON CONFLICT (id) DO UPDATE SET public = false;
+
+CREATE POLICY "Allow authenticated users to read reports" 
+ON storage.objects FOR SELECT 
+TO authenticated 
+USING ( bucket_id = 'reports' );
+
+CREATE POLICY "Allow authenticated users to insert reports" 
+ON storage.objects FOR INSERT 
+TO authenticated 
+WITH CHECK ( bucket_id = 'reports' );

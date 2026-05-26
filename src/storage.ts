@@ -2,16 +2,19 @@ import { get, set, del } from 'idb-keyval';
 import { InspectionDraft, CompletedInspection, ClientData, ChecklistItemData, InspectionReport, DEFAULT_CHECKLIST_ITEMS } from './types';
 import { supabase } from './d2d/supabaseClient';
 
-const DRAFT_KEY = 'wayside_draft';
+import { encryptData, decryptData } from './encryption';
+
+const DRAFT_KEY = 'wayside_draft_enc';
 const HISTORY_KEY = 'wayside_history';
 const TEMPLATE_KEY = 'wayside_template';
-const OFFLINE_INSPECTIONS_KEY = 'wayside_offline_inspections';
+const OFFLINE_INSPECTIONS_KEY = 'wayside_offline_inspections_enc';
 
 // ─── Draft ────────────────────────────────────────────────────────────────────
 
 export async function saveDraft(draft: InspectionDraft): Promise<void> {
   try {
-    await set(DRAFT_KEY, draft);
+    const encrypted = await encryptData(draft);
+    await set(DRAFT_KEY, encrypted);
   } catch (e) {
     console.error('Failed to save draft', e);
   }
@@ -19,8 +22,9 @@ export async function saveDraft(draft: InspectionDraft): Promise<void> {
 
 export async function loadDraft(): Promise<InspectionDraft | null> {
   try {
-    const draft = await get<InspectionDraft>(DRAFT_KEY);
-    return draft || null;
+    const encrypted = await get<string>(DRAFT_KEY);
+    if (!encrypted) return null;
+    return await decryptData(encrypted);
   } catch {
     return null;
   }
@@ -82,27 +86,54 @@ export async function saveCompletedInspection(
         });
       
       if (!uploadError && uploadData) {
-        const { data: publicUrlData } = supabase.storage.from('reports').getPublicUrl(fileName);
-        pdfUrl = publicUrlData.publicUrl;
+        // We only store the filename; Signed URLs are generated on the fly at read-time
+        pdfUrl = fileName;
       } else {
         console.error('Failed to upload PDF:', uploadError);
       }
     }
 
+    let customerId = null;
+    if (record.clientInfo.clientEmail) {
+      const { data: existingCustomer } = await supabase.from('customers')
+        .select('id').eq('email', record.clientInfo.clientEmail).maybeSingle();
+      if (existingCustomer) customerId = existingCustomer.id;
+    }
+    if (!customerId) {
+      const { data: newCustomer, error: custErr } = await supabase.from('customers').insert([{
+        full_name: record.clientInfo.clientName,
+        email: record.clientInfo.clientEmail || null,
+        phone: (record.clientInfo as any).clientPhone || null,
+        agreed_to_tos: record.clientInfo.agreedToTos || false,
+        tos_agreed_at: record.clientInfo.agreedToTos ? new Date().toISOString() : null,
+        sms_consent_granted: record.clientInfo.smsConsentGranted || false,
+        sms_consent_at: record.clientInfo.smsConsentGranted ? new Date().toISOString() : null,
+        opted_out_of_sale: record.clientInfo.optedOutOfSale || false
+      }]).select('id').single();
+      if (newCustomer) customerId = newCustomer.id;
+      else console.error('Failed to create customer', custErr);
+    }
+
+    let propertyId = null;
+    const { data: existingProp } = await supabase.from('properties')
+      .select('id').eq('address', record.clientInfo.propertyAddress).maybeSingle();
+    if (existingProp) propertyId = existingProp.id;
+    else {
+      const { data: newProp } = await supabase.from('properties').insert([{
+        address: record.clientInfo.propertyAddress
+      }]).select('id').single();
+      if (newProp) propertyId = newProp.id;
+    }
+
     const supabaseRecord = {
       id: record.id,
       technician_id: technicianId,
-      client_name: record.clientInfo.clientName,
-      client_email: record.clientInfo.clientEmail || null,
-      property_address: record.clientInfo.propertyAddress,
-      client_phone: (record.clientInfo as any).clientPhone || null,
-      client_info: record.clientInfo as any,
+      customer_id: customerId,
+      property_id: propertyId,
       checklist_data: record.checklist as any,
       created_at: record.completedAt,
       pdf_url: pdfUrl,
-      duration_seconds: durationSeconds,
-      client_signature: (record as any).clientSignature || null,
-      technician_signature: (record as any).technicianSignature || null
+      duration_seconds: durationSeconds
     };
 
     const { error } = await supabase.from('inspections').insert([supabaseRecord]);
@@ -110,19 +141,19 @@ export async function saveCompletedInspection(
     if (!error) {
       const sixMonths = new Date();
       sixMonths.setMonth(sixMonths.getMonth() + 6);
-      await supabase.from('client_touchpoints').insert([{
-        client_name: record.clientInfo.clientName,
-        client_email: record.clientInfo.clientEmail || null,
-        client_phone: (record.clientInfo as any).clientPhone || null,
-        property_address: record.clientInfo.propertyAddress,
-        campaign_type: '6_month_seasonal',
-        scheduled_for: sixMonths.toISOString()
-      }]);
+      if (customerId) {
+        await supabase.from('client_touchpoints').insert([{
+          client_id: customerId,
+          type: '6_month_seasonal',
+          scheduled_for: sixMonths.toISOString()
+        }]);
+      }
     } else {
       console.error('Supabase sync failed, queuing offline:', error);
-      const queue = (await get<any[]>(OFFLINE_INSPECTIONS_KEY)) || [];
+      const encryptedStr = await get<string>(OFFLINE_INSPECTIONS_KEY);
+      const queue = encryptedStr ? (await decryptData(encryptedStr) || []) : [];
       queue.push(supabaseRecord);
-      await set(OFFLINE_INSPECTIONS_KEY, queue);
+      await set(OFFLINE_INSPECTIONS_KEY, await encryptData(queue));
     }
   }
 
@@ -130,7 +161,9 @@ export async function saveCompletedInspection(
 }
 
 export async function syncOfflineInspections(): Promise<void> {
-  const queue = await get<any[]>(OFFLINE_INSPECTIONS_KEY) || [];
+  const encryptedStr = await get<string>(OFFLINE_INSPECTIONS_KEY);
+  if (!encryptedStr) return;
+  const queue = await decryptData(encryptedStr) || [];
   if (queue.length === 0) return;
   
   const remaining = [];
@@ -143,17 +176,16 @@ export async function syncOfflineInspections(): Promise<void> {
       // Create the touchpoint upon successful sync
       const sixMonths = new Date();
       sixMonths.setMonth(sixMonths.getMonth() + 6);
-      await supabase.from('client_touchpoints').insert([{
-        client_name: record.client_name,
-        client_email: record.client_email,
-        client_phone: record.client_phone,
-        property_address: record.property_address,
-        campaign_type: '6_month_seasonal',
-        scheduled_for: sixMonths.toISOString()
-      }]);
+      if (record.customer_id) {
+        await supabase.from('client_touchpoints').insert([{
+          client_id: record.customer_id,
+          type: '6_month_seasonal',
+          scheduled_for: sixMonths.toISOString()
+        }]);
+      }
     }
   }
-  await set(OFFLINE_INSPECTIONS_KEY, remaining);
+  await set(OFFLINE_INSPECTIONS_KEY, await encryptData(remaining));
 }
 
 export async function deleteHistoryRecord(id: string): Promise<void> {

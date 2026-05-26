@@ -37,14 +37,19 @@ export default function CustomerPortal() {
     setLoadingData(true);
     const { data, error } = await supabase
       .from('inspections')
-      .select('*')
+      .select('*, customer:customers!inner(email), property:properties(address)')
+      .eq('customer.email', session.user.email)
       .order('created_at', { ascending: false });
       
     if (error) {
       console.error('Fetch error:', error);
       toast.error('Failed to load your reports.');
     } else {
-      setInspections(data || []);
+      const mapped = (data || []).map((i: any) => ({
+        ...i,
+        property_address: i.property?.address || i.property_address
+      }));
+      setInspections(mapped);
     }
     setLoadingData(false);
   };
@@ -179,15 +184,21 @@ export default function CustomerPortal() {
                 </div>
                 
                 {insp.pdf_url ? (
-                  <a 
-                    href={insp.pdf_url} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
+                  <button 
+                    onClick={async () => {
+                      let fileName = insp.pdf_url;
+                      if (fileName.includes('/public/reports/')) {
+                        fileName = fileName.split('/public/reports/')[1];
+                      }
+                      const { data, error } = await supabase.storage.from('reports').createSignedUrl(fileName, 3600);
+                      if (data?.signedUrl) window.open(data.signedUrl, '_blank');
+                      else toast.error('Failed to generate secure PDF link');
+                    }}
                     className="w-full md:w-auto bg-linen-white hover:bg-pathway-green hover:text-white border border-deep-forest/10 text-deep-forest font-bold px-6 py-3 rounded-xl transition-all flex items-center justify-center gap-2 group-hover:shadow-md"
                   >
                     <Download className="w-4 h-4" />
                     Download PDF Report
-                  </a>
+                  </button>
                 ) : (
                   <div className="text-xs font-bold text-deep-forest/40 uppercase tracking-wider px-4 py-3 bg-linen-white rounded-xl border border-deep-forest/5 text-center">
                     PDF Not Available

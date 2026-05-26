@@ -23,6 +23,7 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
   
   const [inspections, setInspections] = useState<any[]>([]);
   const [leads, setLeads] = useState<any[]>([]);
+  const [viewArchived, setViewArchived] = useState(false);
   const [profiles, setProfiles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedInspection, setSelectedInspection] = useState<any | null>(null);
@@ -91,12 +92,12 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
           ]);
         }
         const [inspectionsRes, leadsRes, profilesRes, templatesRes, touchpointsRes, notesRes, commsRes, zonesRes, ticketsRes, agreementsRes, propertiesRes, customersRes, timeEntriesRes, auditLogsRes] = await Promise.all([
-          supabase.from('inspections').select('*').order('created_at', { ascending: false }),
+          supabase.from('inspections').select('*, customer:customers(full_name, email, phone), property:properties(address)').order('created_at', { ascending: false }),
           supabase.from('d2d_leads').select('*').order('created_at', { ascending: false }),
           supabase.from('profiles').select('*').order('created_at', { ascending: true }),
           supabase.from('inspection_templates').select('*').order('order_index', { ascending: true }),
-          supabase.from('client_touchpoints').select('*').order('scheduled_for', { ascending: true }),
-          supabase.from('client_notes').select('*').order('created_at', { ascending: false }),
+          supabase.from('client_touchpoints').select('*, customer:customers(full_name, email, phone)').order('scheduled_for', { ascending: true }),
+          supabase.from('client_notes').select('*, property:properties(address)').order('created_at', { ascending: false }),
           supabase.from('communication_logs').select('*').order('created_at', { ascending: false }),
           supabase.from('territory_zones').select('*').order('created_at', { ascending: true }),
           supabase.from('service_tickets').select('*').order('created_at', { ascending: false }),
@@ -111,13 +112,33 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
         if (leadsRes.error) throw leadsRes.error;
         if (profilesRes.error) throw profilesRes.error;
 
-        setInspections(inspectionsRes.data || []);
+        const mappedInspections = (inspectionsRes.data || []).map((i: any) => ({
+          ...i,
+          client_name: i.customer?.full_name || i.client_name,
+          client_email: i.customer?.email || i.client_email,
+          client_phone: i.customer?.phone || i.client_phone,
+          property_address: i.property?.address || i.property_address
+        }));
+
+        const mappedTouchpoints = (touchpointsRes.data || []).map((t: any) => ({
+          ...t,
+          client_name: t.customer?.full_name || t.client_name,
+          client_email: t.customer?.email || t.client_email,
+          client_phone: t.customer?.phone || t.client_phone
+        }));
+
+        const mappedNotes = (notesRes.data || []).map((n: any) => ({
+          ...n,
+          property_address: n.property?.address || n.property_address
+        }));
+
+        setInspections(mappedInspections);
         setLeads(leadsRes.data || []);
         setProfiles(profilesRes.data || []);
 
         setTemplates(templatesRes.data || []);
-        setTouchpoints(touchpointsRes.data || []);
-        setClientNotes(notesRes.data || []);
+        setTouchpoints(mappedTouchpoints);
+        setClientNotes(mappedNotes);
         setCommunicationLogs(commsRes.data || []);
         setTerritoryZones(zonesRes.data || []);
         setServiceTickets(ticketsRes.data || []);
@@ -231,16 +252,26 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
     }
   };
 
-  const handleDeleteClient = async (id: string, e: React.MouseEvent) => {
+  const handleArchiveClient = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!confirm("Are you sure you want to completely remove this client and all associated data?")) return;
+    if (!confirm("Archive this client? It will be hidden from normal operations but preserved in the God-Mode database.")) return;
     
-    const { error } = await supabase.from('customers').delete().eq('id', id);
-    if (error) toast.error("Failed to delete client");
+    const { error } = await supabase.from('customers').update({ deleted_at: new Date().toISOString() }).eq('id', id);
+    if (error) toast.error("Failed to archive client");
     else {
-      toast.success("Client deleted");
-      setCustomers(prev => prev.filter(c => c.id !== id));
+      toast.success("Client archived");
+      setCustomers(prev => prev.map(c => c.id === id ? { ...c, deleted_at: new Date().toISOString() } as any : c));
       if (selectedClient?.id === id) setSelectedClient(null);
+    }
+  };
+
+  const handleRestoreClient = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const { error } = await supabase.from('customers').update({ deleted_at: null }).eq('id', id);
+    if (error) toast.error("Failed to restore client");
+    else {
+      toast.success("Client restored from archive");
+      setCustomers(prev => prev.map(c => c.id === id ? { ...c, deleted_at: null } as any : c));
     }
   };
   const renderDashboard = () => {
@@ -413,13 +444,15 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
     (i.property_address || '').toLowerCase().includes(inspectionSearch.toLowerCase())
   );
 
+  const escapeCSV = (str: any) => `"${String(str || '').replace(/"/g, '""')}"`;
+
   const exportInspectionsCSV = () => {
     const headers = ['ID', 'Date', 'Client', 'Email', 'Phone', 'Address', 'Duration (s)', 'Technician ID', 'PDF URL'];
     const csvContent = [
       headers.join(','),
       ...inspections.map(i => [
-        i.id, new Date(i.created_at).toISOString(), `"${i.client_name}"`, i.client_email || '', i.client_phone || '', 
-        `"${i.property_address}"`, i.duration_seconds || '', i.technician_id, i.pdf_url || ''
+        i.id, new Date(i.created_at).toISOString(), escapeCSV(i.client_name), escapeCSV(i.client_email), escapeCSV(i.client_phone), 
+        escapeCSV(i.property_address), i.duration_seconds || '', i.technician_id, i.pdf_url || ''
       ].join(','))
     ].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -549,10 +582,18 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
 
               {/* PDF Button */}
               {selectedInspection.pdf_url && (
-                <a href={selectedInspection.pdf_url} target="_blank" rel="noopener noreferrer" className="bg-amber-porch text-white font-bold px-6 py-4 rounded-2xl flex items-center justify-between group hover:brightness-110 transition-all shadow-md shadow-amber-porch/20">
-                  <span className="flex items-center gap-2"><FileText className="w-5 h-5" /> Official PDF Report</span>
+                <button onClick={async () => {
+                  let fileName = selectedInspection.pdf_url;
+                  if (fileName.includes('/public/reports/')) {
+                    fileName = fileName.split('/public/reports/')[1];
+                  }
+                  const { data, error } = await supabase.storage.from('reports').createSignedUrl(fileName, 3600);
+                  if (data?.signedUrl) window.open(data.signedUrl, '_blank');
+                  else toast.error('Failed to generate secure PDF link');
+                }} className="bg-amber-porch w-full text-white font-bold px-6 py-4 rounded-2xl flex items-center justify-between group hover:brightness-110 transition-all shadow-md shadow-amber-porch/20">
+                  <span className="flex items-center gap-2"><FileText className="w-5 h-5" /> Official PDF Report (Secure Link)</span>
                   <Download className="w-5 h-5 opacity-50 group-hover:opacity-100 transition-opacity" />
-                </a>
+                </button>
               )}
 
               {/* Checklist Breakdown */}
@@ -760,8 +801,7 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
   const renderClients = () => {
     // Enrich customers with properties and agreements
     const enrichedCustomers = customers.map(c => {
-      // Find properties associated with this customer
-      const cProperties = properties.filter(p => p.customer_id === c.id || serviceAgreements.find(a => a.customer_id === c.id && a.property_id === p.id));
+      const cProperties = properties.filter(p => serviceAgreements.find(a => a.customer_id === c.id && a.property_id === p.id));
       const cAgreements = serviceAgreements.filter(a => a.customer_id === c.id);
       
       const totalArr = cAgreements.reduce((sum: number, a: any) => {
@@ -778,139 +818,103 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
 
     const clientsList = enrichedCustomers
       .sort((a,b) => b.totalArr - a.totalArr) // Sort by most valuable
-      .filter(c => c.full_name.toLowerCase().includes(clientSearch.toLowerCase()));
+      .filter(c => {
+        // Archive View Filter
+        if (viewArchived) {
+          if (!c.deleted_at) return false;
+        } else {
+          if (c.deleted_at) return false;
+        }
+
+        if (!clientSearch) return true;
+        const search = clientSearch.toLowerCase();
+        return c.full_name?.toLowerCase().includes(search) || 
+               c.email?.toLowerCase().includes(search) ||
+               c.phone?.includes(search);
+      });
 
     if (selectedClient) {
       // Re-find latest state
-      const currentClientState = clientsList.find(c => c.id === selectedClient.id) || selectedClient;
+      const currentClientState = enrichedCustomers.find(c => c.id === selectedClient.id) || selectedClient;
       return renderClientProfile(currentClientState);
     }
 
     return (
-      <div className="bg-white rounded-2xl shadow-xl border border-deep-forest/5 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
-        <div className="p-6 border-b border-deep-forest/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
+      <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500 h-full">
+        <div className="bg-white rounded-2xl shadow-xl border border-deep-forest/5 overflow-hidden flex flex-col flex-1">
+          <div className="p-6 border-b border-deep-forest/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shrink-0">
             <h3 className="text-xl font-bold text-deep-forest flex items-center gap-2">
-              <Users className="w-5 h-5 text-amber-porch" /> Route Customers
+              <Users className="w-5 h-5 text-amber-porch" /> Client Directory
+              {viewArchived && <span className="ml-2 text-[10px] uppercase font-bold bg-amber-porch text-white px-2 py-0.5 rounded-full">Archive</span>}
             </h3>
-            <span className="bg-deep-forest/5 text-deep-forest px-3 py-1 rounded-full text-xs font-bold uppercase">{clientsList.length} Total</span>
-          </div>
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <div className="relative flex-1 sm:w-64">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-deep-forest/40" />
-              <Input 
-                placeholder="Search customers..." 
-                value={clientSearch}
-                onChange={e => setClientSearch(e.target.value)}
-                className="pl-9 h-9 bg-linen-white/50 border-deep-forest/10 rounded-lg text-sm"
-              />
-            </div>
-            <Button 
-              onClick={() => { setClientForm({ full_name: '', email: '', phone: '' }); setClientModalOpen(true); }}
-              className="bg-pathway-green text-white hover:brightness-110 h-9 px-4 shrink-0"
-            >
-              Add Client
-            </Button>
-          </div>
-        </div>
-        <div className="divide-y divide-deep-forest/5">
-          {clientsList.length === 0 ? (
-            <div className="p-8 text-center text-deep-forest/50">No customers found. Convert leads on the Acquisition board!</div>
-          ) : (
-            clientsList.map((c, idx) => (
-              <div 
-                key={idx} 
-                onClick={() => setSelectedClient(c)}
-                className="p-6 hover:bg-linen-white/30 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-4 cursor-pointer"
+            
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="relative">
+                <Search className="w-4 h-4 text-deep-forest/40 absolute left-3 top-1/2 -translate-y-1/2" />
+                <Input 
+                  placeholder="Search customers..." 
+                  value={clientSearch}
+                  onChange={e => setClientSearch(e.target.value)}
+                  className="pl-9 bg-linen-white border-deep-forest/10 w-full sm:w-64"
+                />
+              </div>
+              <Button 
+                variant={viewArchived ? "default" : "outline"}
+                className={viewArchived ? "bg-amber-porch text-white font-bold border-0" : "font-bold text-deep-forest/60 hover:text-deep-forest"}
+                onClick={() => setViewArchived(!viewArchived)}
               >
-                <div className="flex-1">
-                  <p className="font-bold text-deep-forest text-lg">{c.full_name}</p>
-                  <p className="text-sm text-deep-forest/60">{c.properties[0]?.address || 'No property linked'}</p>
-                </div>
-                <div className="flex flex-col sm:items-end shrink-0 gap-1">
-                  <div className="flex items-center gap-4">
-                    <span className="text-[10px] uppercase font-bold text-deep-forest/40 tracking-wider">Properties</span>
-                    <span className="font-bold text-deep-forest">{c.properties.length}</span>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <span className="text-[10px] uppercase font-bold text-deep-forest/40 tracking-wider">Account ARR</span>
-                    <span className="font-bold text-pathway-green">${c.totalArr.toLocaleString()}</span>
-                  </div>
-                  <div className="flex items-center gap-2 mt-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setClientForm({ id: c.id, full_name: c.full_name, email: c.email || '', phone: c.phone || '' });
-                        setClientModalOpen(true);
-                      }}
-                      className="h-7 px-2 text-deep-forest/50 hover:text-deep-forest hover:bg-deep-forest/5"
-                    >
-                      Edit
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={(e) => handleDeleteClient(c.id, e)}
-                      className="h-7 px-2 text-red-500/50 hover:text-red-600 hover:bg-red-50"
-                    >
-                      Delete
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-
-        {/* Add/Edit Client Modal */}
-        {clientModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-            <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
-              <div className="px-6 py-4 border-b border-deep-forest/10 flex items-center justify-between">
-                <h3 className="font-bold text-deep-forest text-lg">{clientForm.id ? 'Edit Client' : 'Add Client'}</h3>
-                <button onClick={() => setClientModalOpen(false)} className="text-deep-forest/40 hover:text-deep-forest">
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-              <div className="p-6 flex flex-col gap-4">
-                <div>
-                  <label className="text-[10px] font-bold uppercase text-deep-forest/50 mb-1 block">Full Name *</label>
-                  <Input 
-                    value={clientForm.full_name} 
-                    onChange={e => setClientForm({...clientForm, full_name: e.target.value})}
-                    placeholder="e.g. John Smith"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold uppercase text-deep-forest/50 mb-1 block">Email</label>
-                  <Input 
-                    type="email"
-                    value={clientForm.email} 
-                    onChange={e => setClientForm({...clientForm, email: e.target.value})}
-                    placeholder="e.g. john@example.com"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold uppercase text-deep-forest/50 mb-1 block">Phone</label>
-                  <Input 
-                    type="tel"
-                    value={clientForm.phone} 
-                    onChange={e => setClientForm({...clientForm, phone: e.target.value})}
-                    placeholder="e.g. 555-0123"
-                  />
-                </div>
-                <Button 
-                  onClick={handleSaveClient} 
-                  className="w-full bg-pathway-green hover:bg-pathway-green/90 text-white font-bold py-6 rounded-xl mt-2"
-                >
-                  {clientForm.id ? 'Save Changes' : 'Create Client'}
-                </Button>
-              </div>
+                {viewArchived ? "Exit Archive" : "View Archive"}
+              </Button>
+              <Button 
+                onClick={() => {
+                  setClientForm({ full_name: '', email: '', phone: '' });
+                  setClientModalOpen(true);
+                }}
+                className="bg-pathway-green text-white hover:brightness-110 h-9 px-4 shrink-0"
+              >
+                Add Client
+              </Button>
             </div>
           </div>
-        )}
+          <div className="divide-y divide-deep-forest/5 overflow-y-auto">
+            {clientsList.length === 0 ? (
+              <div className="p-8 text-center text-deep-forest/50">No customers found.</div>
+            ) : (
+              clientsList.map((c, idx) => (
+                <div 
+                  key={idx} 
+                  onClick={() => setSelectedClient(c)}
+                  className="p-6 hover:bg-linen-white/30 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-4 cursor-pointer group"
+                >
+                  <div className="flex-1">
+                    <p className="font-bold text-deep-forest text-lg">{c.full_name}</p>
+                    <div className="flex items-center gap-2">
+                        {c.email && <span className="text-[10px] font-semibold text-deep-forest/40 uppercase tracking-wider">{c.email}</span>}
+                        {c.phone && <span className="text-[10px] font-semibold text-deep-forest/40 uppercase tracking-wider ml-2">{c.phone}</span>}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    {viewArchived ? (
+                      <button
+                        onClick={(e) => handleRestoreClient(c.id, e)}
+                        className="opacity-0 group-hover:opacity-100 bg-amber-porch text-white px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all hover:brightness-110"
+                      >
+                        Restore
+                      </button>
+                    ) : (
+                      <button
+                        onClick={(e) => handleArchiveClient(c.id, e)}
+                        className="opacity-0 group-hover:opacity-100 text-red-500 text-xs font-bold uppercase tracking-wider hover:bg-red-50 px-2 py-1 rounded transition-colors"
+                      >
+                        Archive
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
       </div>
     );
   };
@@ -1424,6 +1428,24 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
     toast.success('Service ticket cancelled.');
   };
 
+  const handleOverrideTech = async (ticketId: string, newTechId: string) => {
+    const { error } = await supabase.from('service_tickets').update({ assigned_tech_id: newTechId || null }).eq('id', ticketId);
+    if (error) toast.error("Failed to reassign tech");
+    else {
+      toast.success("Technician manually overridden (Audit Log generated)");
+      setServiceTickets(prev => prev.map(t => t.id === ticketId ? { ...t, assigned_tech_id: newTechId || null } : t));
+    }
+  };
+
+  const handleToggleTimeLock = async (ticketId: string, currentStatus: boolean) => {
+    const { error } = await supabase.from('service_tickets').update({ is_time_locked: !currentStatus }).eq('id', ticketId);
+    if (error) toast.error("Failed to toggle time lock");
+    else {
+      toast.success(!currentStatus ? "Time Hard-Locked (Bypassing Optimization)" : "Time Unlocked");
+      setServiceTickets(prev => prev.map(t => t.id === ticketId ? { ...t, is_time_locked: !currentStatus } : t));
+    }
+  };
+
   const renderScheduling = () => {
     const today = new Date();
     const year = calendarDate.getFullYear();
@@ -1556,27 +1578,54 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
                       <Map className="w-3 h-3" /> {zoneName} ({tickets.length} jobs)
                     </h5>
                     {tickets.map(t => (
-                      <div key={t.id} className="flex items-center justify-between p-4 bg-white border rounded-xl shadow-sm hover:shadow-md transition-all" style={{ borderColor: `${zoneColor}20` }}>
-                        <div>
-                          <p className="font-bold text-sm text-deep-forest">{t.customer?.full_name || 'Unknown'}</p>
-                          <p className="text-xs text-deep-forest/60 mt-0.5">{t.property?.address || 'No address'}</p>
-                          <div className="flex items-center gap-3 mt-1.5">
-                            {t.scheduled_start && (
-                              <p className="text-xs font-bold" style={{ color: zoneColor }}>
-                                {new Date(t.scheduled_start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                {t.scheduled_end && ` – ${new Date(t.scheduled_end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
-                              </p>
-                            )}
-                            <span className="text-[9px] uppercase font-bold bg-deep-forest/5 text-deep-forest/50 px-1.5 py-0.5 rounded">{t.type} ticket</span>
+                      <div key={t.id} className="flex flex-col gap-3 p-4 bg-white border rounded-xl shadow-sm hover:shadow-md transition-all" style={{ borderColor: `${zoneColor}20` }}>
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="font-bold text-sm text-deep-forest">{t.customer?.full_name || 'Unknown'}</p>
+                            <p className="text-xs text-deep-forest/60 mt-0.5">{t.property?.address || 'No address'}</p>
+                            <div className="flex items-center gap-3 mt-1.5">
+                              {t.scheduled_start && (
+                                <p className="text-xs font-bold flex items-center gap-1" style={{ color: zoneColor }}>
+                                  <CalendarIcon className="w-3 h-3" />
+                                  {new Date(t.scheduled_start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  {t.scheduled_end && ` – ${new Date(t.scheduled_end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
+                                </p>
+                              )}
+                              <span className="text-[9px] uppercase font-bold bg-deep-forest/5 text-deep-forest/50 px-1.5 py-0.5 rounded">{t.type}</span>
+                            </div>
+                          </div>
+                          
+                          <div className="flex flex-col items-end gap-2">
+                            <button
+                              onClick={() => handleToggleTimeLock(t.id, t.is_time_locked)}
+                              className={`flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded transition-colors ${t.is_time_locked ? 'bg-amber-porch text-white' : 'bg-linen-white text-deep-forest/40 hover:text-deep-forest hover:bg-deep-forest/5'}`}
+                            >
+                              <Clock className="w-3 h-3" /> {t.is_time_locked ? 'Time Locked' : 'Lock Time'}
+                            </button>
+                            <button
+                              onClick={() => handleCancelTicket(t.id)}
+                              className="text-[10px] font-bold uppercase tracking-wider text-red-500 hover:text-red-700 transition-colors"
+                            >
+                              Cancel Ticket
+                            </button>
                           </div>
                         </div>
-                        <div className="shrink-0 flex flex-col items-end gap-2">
-                          <button
-                            onClick={() => handleCancelTicket(t.id)}
-                            className="text-[10px] font-bold uppercase tracking-wider text-red-500 hover:text-red-700 transition-colors"
-                          >
-                            Cancel Ticket
-                          </button>
+
+                        {/* Force Override Controls */}
+                        <div className="pt-3 mt-1 border-t border-deep-forest/5 flex items-center justify-between gap-3 bg-linen-white/30 -mx-4 -mb-4 p-4 rounded-b-xl">
+                          <div className="flex items-center gap-2 flex-1">
+                            <span className="text-[10px] uppercase font-bold tracking-wider text-deep-forest/50 shrink-0">Assigned Tech:</span>
+                            <select
+                              value={t.assigned_tech_id || ''}
+                              onChange={(e) => handleOverrideTech(t.id, e.target.value)}
+                              className="w-full text-xs font-bold text-deep-forest bg-white border border-deep-forest/10 rounded-md px-2 py-1 focus:outline-none focus:border-amber-porch"
+                            >
+                              <option value="">Unassigned</option>
+                              {profiles.filter(p => p.role === 'technician' || p.role === 'admin' || p.role === 'owner').map(p => (
+                                <option key={p.id} value={p.id}>{p.full_name}</option>
+                              ))}
+                            </select>
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -1780,29 +1829,9 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
     if (!inviteEmail.trim()) return;
     setInviteLoading(true);
     try {
-      // Option A: Create account with a temp password — user resets via "Forgot Password"
-      const tempPassword = `Ws${Math.random().toString(36).slice(2, 8)}!${Math.random().toString(36).slice(2, 5)}`;
-      const { data, error } = await supabase.auth.signUp({
-        email: inviteEmail,
-        password: tempPassword,
-        options: { data: { role: inviteRole, full_name: '' } },
-      });
-      if (error) throw error;
-      if (data.user) {
-        await supabase.from('profiles').upsert(
-          { id: data.user.id, email: inviteEmail, role: inviteRole, is_active: true },
-          { onConflict: 'id' }
-        );
-        setProfiles(prev =>
-          prev.some(p => p.id === data.user!.id)
-            ? prev
-            : [...prev, { id: data.user!.id, email: inviteEmail, role: inviteRole, is_active: true, full_name: '', created_at: new Date().toISOString() }]
-        );
-      }
-      toast.success(
-        `✅ Account created for ${inviteEmail}!\nTemp password: ${tempPassword}\nTell them to use "Forgot Password" after first login.`,
-        { duration: 12000 }
-      );
+      // To prevent session hijacking on the client side, redirect admin to the Supabase dashboard
+      // The proper fix requires a Supabase Edge Function to use auth.admin.createUser()
+      toast.error('Client-side invites are disabled to prevent session hijacking. Please invite team members directly via the Supabase Dashboard.');
       setInviteEmail('');
     } catch (err: any) {
       toast.error(err.message || 'Failed to create account');
