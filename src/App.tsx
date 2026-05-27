@@ -9,6 +9,8 @@ import { generateAndDownloadPDF } from './pdfGenerator';
 import { AuthLogin } from './components/AuthLogin';
 import { supabase } from './d2d/supabaseClient';
 import { Toaster, toast } from 'sonner';
+import { TechRouteMap } from './components/TechRouteMap';
+import { SignaturePad } from './components/SignaturePad';
 import {
   saveDraft, loadDraft, clearDraft,
   saveCompletedInspection, loadHistory, loadTemplate, syncOfflineInspections
@@ -20,7 +22,7 @@ import { Label } from '@/components/ui/label';
 import { Loader2, CheckCircle2, AlertCircle, History, ClipboardList, Menu, X, LogOut, Settings, User, Lock, Mail, MapPin, Calendar } from 'lucide-react';
 import { Logo } from './components/Logo';
 
-type Step = 'dashboard' | 'client_info' | 'checklist' | 'history' | 'settings' | 'generating' | 'success' | 'error';
+type Step = 'dashboard' | 'client_info' | 'checklist' | 'signature' | 'history' | 'settings' | 'generating' | 'success' | 'error';
 
 const EMPTY_CLIENT: ClientData = {
   clientName: '',
@@ -58,6 +60,10 @@ export default function App({ session, profile }: { session: any, profile: any }
   // Track elapsed in a ref (not re-rendered state) for perf
   const timerRef = useRef(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // ── Signatures ────────────────────────────────────────────────────────────
+  const [clientSignature, setClientSignature] = useState('');
+  const [techSignature, setTechSignature] = useState('');
 
   // ── Scheduled Jobs ────────────────────────────────────────────────────────
   const [scheduledJobs, setScheduledJobs] = useState<any[]>([]);
@@ -254,7 +260,7 @@ export default function App({ session, profile }: { session: any, profile: any }
     setShowResumeBanner(false);
   };
 
-  const handleComplete = async () => {
+  const handleProceedToSignature = () => {
     for (let i = 0; i < templateItems.length; i++) {
       const item = checklistData[i];
       if (!item || !item.status) {
@@ -265,21 +271,34 @@ export default function App({ session, profile }: { session: any, profile: any }
 
     const elapsed = stopTimer();
     setElapsedOnComplete(elapsed);
+    setStep('signature');
+  };
+
+  const handleFinalSubmit = async () => {
+    if (!clientSignature || !techSignature) {
+      toast.error('Both signatures are required to finalize.');
+      return;
+    }
+
     setStep('generating');
 
     try {
       const report: InspectionReport = { 
         clientInfo: clientData, 
         checklist: checklistData,
+        clientSignature,
+        technicianSignature: techSignature
       };
       const pdfBlob = await generateAndDownloadPDF(report, templateItems);
-      await saveCompletedInspection(report, elapsed, clientData.technicianId || '', pdfBlob);
+      await saveCompletedInspection(report, elapsedOnComplete, clientData.technicianId || '', pdfBlob);
       await clearDraft();
       
       const history = await loadHistory();
       setHistoryCount(history.length);
       
       setDraft(null);
+      setClientSignature('');
+      setTechSignature('');
       setStep('success');
     } catch (error: any) {
       console.error(error);
@@ -561,8 +580,15 @@ export default function App({ session, profile }: { session: any, profile: any }
                   <p className="text-deep-forest/40 text-sm mt-1">Enjoy the downtime or start a walk-in!</p>
                 </div>
               ) : (
-                <div className="grid gap-3">
-                  {scheduledJobs.map(job => (
+                <div className="flex flex-col gap-6">
+                  {/* Visual Drive-Time Routing */}
+                  <div>
+                    <h3 className="text-sm font-bold text-deep-forest/60 uppercase tracking-wider mb-3">Your Daily Route</h3>
+                    <TechRouteMap jobs={scheduledJobs} />
+                  </div>
+
+                  <div className="grid gap-3">
+                    {scheduledJobs.map(job => (
                     <div key={job.id} onClick={() => handleStartScheduledJob(job)} className="group bg-linen-white hover:bg-pathway-green/5 border border-deep-forest/10 hover:border-pathway-green/30 p-4 rounded-xl cursor-pointer transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                       <div>
                         <div className="flex items-center gap-2 mb-1">
@@ -581,6 +607,7 @@ export default function App({ session, profile }: { session: any, profile: any }
                       </Button>
                     </div>
                   ))}
+                  </div>
                 </div>
               )}
             </div>
@@ -736,11 +763,52 @@ export default function App({ session, profile }: { session: any, profile: any }
               <div className="flex justify-end">
                 <button
                   type="button"
-                  onClick={handleComplete}
+                  onClick={handleProceedToSignature}
                   className="w-full sm:w-auto bg-pathway-green text-white py-4 px-10 rounded-xl font-bold text-[15px] hover:brightness-110 transition-all shadow-lg shadow-pathway-green/20 flex items-center justify-center gap-2"
                 >
                   Complete Inspection
                   <svg width="18" height="18" fill="currentColor" viewBox="0 0 16 16"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Signature ── */}
+        {step === 'signature' && (
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-xl mx-auto w-full">
+            <div className="bg-white rounded-2xl shadow-xl border border-deep-forest/5 p-6 md:p-8 flex flex-col gap-6">
+              <div>
+                <h2 className="text-2xl font-black text-deep-forest mb-2">Final Signatures</h2>
+                <p className="text-deep-forest/60 text-sm">Please sign below to authorize and complete the inspection report for {clientData.propertyAddress}.</p>
+              </div>
+
+              <div className="flex flex-col gap-8">
+                <SignaturePad 
+                  label="Client Signature (Required)" 
+                  onSave={setClientSignature} 
+                />
+                
+                <SignaturePad 
+                  label="Technician Signature (Required)" 
+                  onSave={setTechSignature} 
+                />
+              </div>
+
+              <div className="flex gap-4 mt-4 pt-6 border-t border-deep-forest/10">
+                <button
+                  type="button"
+                  onClick={() => setStep('checklist')}
+                  className="px-6 py-4 rounded-xl font-bold text-deep-forest/50 hover:bg-deep-forest/5 transition-all text-sm"
+                >
+                  Back
+                </button>
+                <button
+                  type="button"
+                  onClick={handleFinalSubmit}
+                  className="flex-1 bg-pathway-green text-white py-4 rounded-xl font-bold text-[15px] hover:brightness-110 transition-all shadow-lg shadow-pathway-green/20"
+                >
+                  Finalize & Generate PDF
                 </button>
               </div>
             </div>

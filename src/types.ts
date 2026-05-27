@@ -42,6 +42,8 @@ export interface ClientData {
 export interface InspectionReport {
   clientInfo: ClientData;
   checklist: Record<number, ChecklistItemData>;
+  clientSignature?: string;
+  technicianSignature?: string;
 }
 
 // In-progress inspection auto-saved to localStorage
@@ -61,6 +63,8 @@ export interface CompletedInspection {
   checklist: Record<number, ChecklistItemData>;
   completedAt: string;     // ISO timestamp
   durationSeconds: number; // total time on-site
+  clientSignature?: string;
+  technicianSignature?: string;
 }
 
 // --- D2D Route Optimization OS Types ---
@@ -69,6 +73,8 @@ export interface TerritoryZone {
   id: string;
   name: string;
   color: string;
+  service_block_start?: number;
+  service_block_end?: number;
   is_active: boolean;
   created_at: string;
 }
@@ -98,6 +104,9 @@ export interface ServiceAgreement {
   recurring_price: number;
   frequency: string;
   status: 'active' | 'paused' | 'cancelled';
+  contract_start_date: string;
+  contract_end_date: string;
+  territory_zone_id?: string;
   created_at: string;
 }
 

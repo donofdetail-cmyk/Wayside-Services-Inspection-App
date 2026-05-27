@@ -5,6 +5,7 @@ import App from './App.tsx';
 import D2DApp from './d2d/D2DApp.tsx';
 import AdminApp from './admin/AdminApp.tsx';
 import CustomerPortal from './portal/CustomerPortal.tsx';
+import WebReport from './portal/WebReport.tsx';
 import './index.css';
 
 import { useEffect, useState } from 'react';
@@ -60,6 +61,11 @@ function RootApp() {
   // Check if it's the customer portal (no auth required)
   if (window.location.pathname.startsWith('/portal')) {
     return <CustomerPortal />;
+  }
+
+  if (window.location.pathname.startsWith('/report/')) {
+    const reportId = window.location.pathname.split('/')[2];
+    return <WebReport reportId={reportId} />;
   }
 
   if (loading) {

@@ -61,6 +61,8 @@ export async function saveCompletedInspection(
     checklist: report.checklist,
     completedAt: new Date().toISOString(),
     durationSeconds,
+    clientSignature: report.clientSignature,
+    technicianSignature: report.technicianSignature
   };
 
   const existing = await loadHistory();
@@ -130,10 +132,17 @@ export async function saveCompletedInspection(
       technician_id: technicianId,
       customer_id: customerId,
       property_id: propertyId,
+      client_name: record.clientInfo.clientName,
+      client_email: record.clientInfo.clientEmail || null,
+      client_phone: record.clientInfo.clientPhone || null,
+      property_address: record.clientInfo.propertyAddress,
+      client_info: record.clientInfo as any,
       checklist_data: record.checklist as any,
       created_at: record.completedAt,
       pdf_url: pdfUrl,
-      duration_seconds: durationSeconds
+      duration_seconds: durationSeconds,
+      client_signature: report.clientSignature || null,
+      technician_signature: report.technicianSignature || null
     };
 
     const { error } = await supabase.from('inspections').insert([supabaseRecord]);

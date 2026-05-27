@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import L from 'leaflet';
 import { MapPin, X, Calendar as CalendarIcon, User, Clock } from 'lucide-react';
 import { Input } from '@/components/ui/input';
@@ -29,14 +29,17 @@ interface Props {
   profiles: any[];
   onAssignTech: (leadId: string, techId: string) => Promise<void>;
   onScheduleTime: (leadId: string, start: string | null, end: string | null) => Promise<void>;
+  highlightedLeadId?: string | null;
+  hideSidebar?: boolean;
+  territoryZones?: any[];
 }
 
-export function DispatchMap({ leads, profiles, onAssignTech, onScheduleTime }: Props) {
+export function DispatchMap({ leads, profiles, onAssignTech, onScheduleTime, highlightedLeadId, hideSidebar, territoryZones = [] }: Props) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<L.Map | null>(null);
   const markersRef = useRef<L.CircleMarker[]>([]);
+  const polygonsRef = useRef<L.Polygon[]>([]);
   const [selectedLead, setSelectedLead] = useState<any | null>(null);
-  const [techColorMap, setTechColorMap] = useState<Record<string, string>>({});
 
   const technicians = profiles.filter(p => p.role === 'technician');
   const scheduledLeads = leads.filter(l => l.status === 'scheduled');
@@ -44,14 +47,13 @@ export function DispatchMap({ leads, profiles, onAssignTech, onScheduleTime }: P
   const unassignedLeads = scheduledLeads.filter(l => !l.assigned_tech_id);
   const assignedLeads = scheduledLeads.filter(l => !!l.assigned_tech_id);
 
-  // Initialize tech colors mapping stably
-  useEffect(() => {
+  const techColorMap = useMemo(() => {
     const newMap: Record<string, string> = {};
     technicians.forEach((tech, idx) => {
       newMap[tech.id] = TECH_COLORS[idx % TECH_COLORS.length];
     });
-    setTechColorMap(newMap);
-  }, [technicians]);
+    return newMap;
+  }, [technicians.map(t => t.id).join(',')]);
 
   // Init map once
   useEffect(() => {
@@ -78,43 +80,92 @@ export function DispatchMap({ leads, profiles, onAssignTech, onScheduleTime }: P
   useEffect(() => {
     if (!mapInstance.current) return;
     
-    // Clear old markers
+    // Clear old markers and polygons
     markersRef.current.forEach(m => m.remove());
     markersRef.current = [];
+    polygonsRef.current.forEach(p => p.remove());
+    polygonsRef.current = [];
 
     const bounds = L.latLngBounds([]);
 
+    // Draw Territory Polygons
+    territoryZones.filter(z => z.is_active && z.polygon_coordinates?.length > 0).forEach(zone => {
+      try {
+        const polygon = L.polygon(zone.polygon_coordinates, {
+          color: zone.color || '#1D3B34',
+          fillColor: zone.color || '#1D3B34',
+          fillOpacity: 0.15,
+          weight: 2,
+          dashArray: '5, 5'
+        }).addTo(mapInstance.current!);
+        
+        polygon.bindTooltip(zone.name, { permanent: false, direction: 'center', className: 'text-xs font-bold' });
+        polygonsRef.current.push(polygon);
+        bounds.extend(polygon.getBounds());
+      } catch (e) {
+        console.error('Invalid polygon coordinates for zone', zone.name, e);
+      }
+    });
+
+    // Draw Job Pins
     scheduledLeads.forEach(lead => {
       if (lead.lat == null || lead.lng == null) return;
       
       const color = lead.assigned_tech_id ? techColorMap[lead.assigned_tech_id] || '#000' : UNASSIGNED_COLOR;
       
       const marker = L.circleMarker([lead.lat, lead.lng], {
-        radius: 10,
+        radius: lead.id === highlightedLeadId ? 14 : 10,
         fillColor: color,
-        color: 'white',
-        weight: 2,
+        color: lead.id === highlightedLeadId ? '#fbbf24' : 'white',
+        weight: lead.id === highlightedLeadId ? 4 : 2,
         opacity: 1,
-        fillOpacity: 0.9,
+        fillOpacity: lead.id === highlightedLeadId ? 1 : 0.9,
       })
         .addTo(mapInstance.current!)
         .on('click', () => setSelectedLead(lead));
+        
+      if (lead.id === highlightedLeadId) {
+        marker.bringToFront();
+      }
         
       markersRef.current.push(marker);
       bounds.extend([lead.lat, lead.lng]);
     });
 
-    if (bounds.isValid() && markersRef.current.length > 0) {
+    // Draw Drive-Time Route Lines per Tech
+    Object.keys(techColorMap).forEach(techId => {
+      const techJobs = scheduledLeads
+        .filter(l => l.assigned_tech_id === techId && l.lat != null && l.lng != null && l.scheduled_start)
+        .sort((a, b) => new Date(a.scheduled_start).getTime() - new Date(b.scheduled_start).getTime());
+
+      if (techJobs.length > 1) {
+        const coords = techJobs.map(j => [j.lat, j.lng] as [number, number]);
+        const polyline = L.polyline(coords, {
+          color: techColorMap[techId],
+          weight: 3,
+          opacity: 0.6,
+          dashArray: '8, 8',
+          lineCap: 'round',
+          lineJoin: 'round'
+        }).addTo(mapInstance.current!);
+        markersRef.current.push(polyline); // Push to markersRef so it gets cleared on next render
+      }
+    });
+
+    if (bounds.isValid() && (markersRef.current.length > 0 || polygonsRef.current.length > 0)) {
       mapInstance.current.fitBounds(bounds, { padding: [50, 50], maxZoom: 16 });
     }
-  }, [scheduledLeads, techColorMap]);
+  }, [scheduledLeads, techColorMap, highlightedLeadId, territoryZones]);
 
   // If selected lead changes in parent state, make sure local state gets the fresh object
   useEffect(() => {
     if (selectedLead) {
       const fresh = scheduledLeads.find(l => l.id === selectedLead.id);
-      if (fresh) setSelectedLead(fresh);
-      else setSelectedLead(null);
+      if (!fresh) {
+        setSelectedLead(null);
+      } else if (JSON.stringify(fresh) !== JSON.stringify(selectedLead)) {
+        setSelectedLead(fresh);
+      }
     }
   }, [scheduledLeads]);
 
@@ -128,10 +179,11 @@ export function DispatchMap({ leads, profiles, onAssignTech, onScheduleTime }: P
   };
 
   return (
-    <div className="bg-white rounded-2xl shadow-xl border border-deep-forest/5 overflow-hidden flex flex-col md:flex-row h-[75vh] min-h-[600px] animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className="bg-white rounded-2xl shadow-xl border border-deep-forest/5 overflow-hidden flex flex-col md:flex-row h-full min-h-[600px] animate-in fade-in slide-in-from-bottom-4 duration-500">
       
       {/* Sidebar Queue */}
-      <div className="w-full md:w-80 bg-linen-white/30 border-r border-deep-forest/10 flex flex-col shrink-0">
+      {!hideSidebar && (
+        <div className="w-full md:w-80 bg-linen-white/30 border-r border-deep-forest/10 flex flex-col shrink-0">
         <div className="p-4 border-b border-deep-forest/10 bg-white">
           <h3 className="font-bold text-deep-forest flex items-center gap-2">
             <CalendarIcon className="w-4 h-4 text-amber-porch" /> 
@@ -213,6 +265,7 @@ export function DispatchMap({ leads, profiles, onAssignTech, onScheduleTime }: P
           </div>
         </div>
       </div>
+      )}
 
       {/* Map Area */}
       <div className="relative flex-1 bg-gray-100 min-h-[400px]">

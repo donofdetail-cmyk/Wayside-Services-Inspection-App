@@ -1,38 +1,55 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../d2d/supabaseClient';
 import { TimeEntry } from '../../types';
-import { Clock, Calendar as CalendarIcon, Loader2 } from 'lucide-react';
+import { Clock, Calendar as CalendarIcon, Loader2, Download, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-
 import { toast } from 'sonner';
 
 export function TimesheetDashboard({ profiles, auditLogs = [] }: { profiles: any[], auditLogs?: any[] }) {
   const [entries, setEntries] = useState<TimeEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [timeframe, setTimeframe] = useState<'today' | 'week'>('week');
+  const [timeframe, setTimeframe] = useState<'today' | 'week' | 'custom'>('week');
+  const [customStart, setCustomStart] = useState<string>(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
+  const [customEnd, setCustomEnd] = useState<string>(new Date().toISOString().split('T')[0]);
   
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [selectedEntry, setSelectedEntry] = useState<TimeEntry | null>(null);
-  const [editForm, setEditForm] = useState({ clock_out_time: '', duration_minutes: 0, admin_notes: '' });
+  const [editForm, setEditForm] = useState({ 
+    clock_in_date: '', 
+    clock_in_time: '', 
+    clock_out_date: '', 
+    clock_out_time: '', 
+    duration_minutes: 0, 
+    admin_notes: '' 
+  });
 
   useEffect(() => {
     fetchTimesheets();
-  }, [timeframe]);
+  }, [timeframe, customStart, customEnd]);
 
   const fetchTimesheets = async () => {
     setLoading(true);
-    const startDate = new Date();
+    let startD = new Date();
+    let endD = new Date();
+    endD.setHours(23, 59, 59, 999);
+
     if (timeframe === 'today') {
-      startDate.setHours(0, 0, 0, 0);
+      startD.setHours(0, 0, 0, 0);
+    } else if (timeframe === 'week') {
+      startD.setDate(startD.getDate() - 7);
     } else {
-      // Last 7 days
-      startDate.setDate(startDate.getDate() - 7);
+      if (customStart) startD = new Date(customStart);
+      if (customEnd) {
+        endD = new Date(customEnd);
+        endD.setHours(23, 59, 59, 999);
+      }
     }
 
     const { data, error } = await supabase
       .from('time_entries')
       .select('*')
-      .gte('clock_in_time', startDate.toISOString())
+      .gte('clock_in_time', startD.toISOString())
+      .lte('clock_in_time', endD.toISOString())
       .order('clock_in_time', { ascending: false });
 
     if (!error && data) {
@@ -73,27 +90,32 @@ export function TimesheetDashboard({ profiles, auditLogs = [] }: { profiles: any
   const handleEditSubmit = async () => {
     if (!selectedEntry) return;
     if (!editForm.admin_notes.trim()) {
-      return toast.error("Admin notes are required to override a time card.");
+      return toast.error("Admin notes are required to override a time card (Legal Requirement).");
     }
     
-    // Parse the new clock_out_time if provided
-    let updatedClockOut = null;
-    if (editForm.clock_out_time) {
-      // Create a Date object from the local time string, keeping the same date but updating time
-      const dateStr = new Date(selectedEntry.clock_in_time).toISOString().split('T')[0];
-      updatedClockOut = new Date(`${dateStr}T${editForm.clock_out_time}`).toISOString();
+    let updatedClockIn = selectedEntry.clock_in_time;
+    if (editForm.clock_in_date && editForm.clock_in_time) {
+      updatedClockIn = new Date(`${editForm.clock_in_date}T${editForm.clock_in_time}`).toISOString();
+    }
+
+    let updatedClockOut = selectedEntry.clock_out_time;
+    if (editForm.clock_out_date && editForm.clock_out_time) {
+      updatedClockOut = new Date(`${editForm.clock_out_date}T${editForm.clock_out_time}`).toISOString();
+    } else if (!editForm.clock_out_time) {
+      updatedClockOut = null; // Revert to clocked in if cleared
     }
     
-    // Recalculate duration if clock_out is set
+    // Recalculate duration if both in and out are present
     let newDuration = editForm.duration_minutes;
-    if (updatedClockOut && !newDuration) {
-      const ms = new Date(updatedClockOut).getTime() - new Date(selectedEntry.clock_in_time).getTime();
+    if (updatedClockIn && updatedClockOut) {
+      const ms = new Date(updatedClockOut).getTime() - new Date(updatedClockIn).getTime();
       newDuration = Math.round(ms / 60000);
     }
 
     const { error } = await supabase.from('time_entries').update({
+      clock_in_time: updatedClockIn,
       clock_out_time: updatedClockOut,
-      duration_minutes: newDuration,
+      duration_minutes: newDuration > 0 ? newDuration : null,
       status: updatedClockOut ? 'clocked_out' : 'clocked_in',
       edited_by_admin: true,
       admin_notes: editForm.admin_notes
@@ -102,7 +124,7 @@ export function TimesheetDashboard({ profiles, auditLogs = [] }: { profiles: any
     if (error) {
       toast.error("Failed to update time entry.");
     } else {
-      toast.success("Time entry updated (Audit Log generated).");
+      toast.success("Time entry updated and securely logged in Audit Trail.");
       setEditModalOpen(false);
       fetchTimesheets();
     }
@@ -110,12 +132,46 @@ export function TimesheetDashboard({ profiles, auditLogs = [] }: { profiles: any
 
   const openEditModal = (entry: any) => {
     setSelectedEntry(entry);
+    const inDate = new Date(entry.clock_in_time);
+    const outDate = entry.clock_out_time ? new Date(entry.clock_out_time) : null;
+    
     setEditForm({
-      clock_out_time: entry.clock_out_time ? new Date(entry.clock_out_time).toTimeString().slice(0, 5) : '',
+      clock_in_date: inDate.toISOString().split('T')[0],
+      clock_in_time: inDate.toTimeString().slice(0, 5),
+      clock_out_date: outDate ? outDate.toISOString().split('T')[0] : inDate.toISOString().split('T')[0],
+      clock_out_time: outDate ? outDate.toTimeString().slice(0, 5) : '',
       duration_minutes: entry.duration_minutes || 0,
       admin_notes: entry.admin_notes || ''
     });
     setEditModalOpen(true);
+  };
+
+  const exportCSV = () => {
+    if (entries.length === 0) return toast.error("No entries to export.");
+    
+    let csv = "Employee,Clock In,Clock Out,Duration (Mins),Total Hours,Status,Admin Override,Audit Notes\n";
+    
+    entries.forEach(entry => {
+      const employee = getProfileName(entry.user_id).replace(/,/g, '');
+      const clockIn = new Date(entry.clock_in_time).toLocaleString().replace(/,/g, '');
+      const clockOut = entry.clock_out_time ? new Date(entry.clock_out_time).toLocaleString().replace(/,/g, '') : 'Active';
+      const duration = entry.duration_minutes || 0;
+      const formattedHr = formatHours(duration);
+      const status = entry.status;
+      const edited = entry.edited_by_admin ? 'Yes' : 'No';
+      const notes = (entry.admin_notes || '').replace(/,/g, ';');
+      
+      csv += `${employee},${clockIn},${clockOut},${duration},${formattedHr},${status},${edited},${notes}\n`;
+    });
+
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.setAttribute('href', url);
+    a.setAttribute('download', `Wayside_Timesheets_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   };
 
   if (loading) {
@@ -128,159 +184,200 @@ export function TimesheetDashboard({ profiles, auditLogs = [] }: { profiles: any
 
   return (
     <div className="bg-white rounded-2xl shadow-xl border border-deep-forest/5 overflow-hidden">
-      <div className="p-6 border-b border-deep-forest/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="p-6 border-b border-deep-forest/10 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-linen-white/30">
         <h3 className="text-xl font-bold text-deep-forest flex items-center gap-2">
-          <Clock className="w-5 h-5 text-amber-porch" /> Timesheets
+          <Clock className="w-5 h-5 text-amber-porch" /> Company Timecards
         </h3>
-        <div className="flex bg-linen-white rounded-lg p-1 border border-deep-forest/10 w-full sm:w-auto">
-          <button
-            onClick={() => setTimeframe('today')}
-            className={`flex-1 sm:px-6 py-2 rounded-md text-xs font-bold uppercase tracking-wider transition-all ${timeframe === 'today' ? 'bg-white shadow text-deep-forest' : 'text-deep-forest/50 hover:text-deep-forest'}`}
-          >
-            Today
-          </button>
-          <button
-            onClick={() => setTimeframe('week')}
-            className={`flex-1 sm:px-6 py-2 rounded-md text-xs font-bold uppercase tracking-wider transition-all ${timeframe === 'week' ? 'bg-white shadow text-deep-forest' : 'text-deep-forest/50 hover:text-deep-forest'}`}
-          >
-            Past 7 Days
-          </button>
+        
+        <div className="flex flex-wrap items-center gap-3">
+          {timeframe === 'custom' && (
+            <div className="flex items-center gap-2 animate-in fade-in mr-2">
+              <input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)} className="text-xs px-2 py-1.5 rounded border border-deep-forest/20" />
+              <span className="text-deep-forest/50 text-xs">to</span>
+              <input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)} className="text-xs px-2 py-1.5 rounded border border-deep-forest/20" />
+            </div>
+          )}
+          
+          <div className="flex bg-white rounded-lg p-1 border border-deep-forest/10 shadow-sm">
+            <button
+              onClick={() => setTimeframe('today')}
+              className={`px-4 py-1.5 rounded-md text-xs font-bold uppercase tracking-wider transition-all ${timeframe === 'today' ? 'bg-pathway-green text-white' : 'text-deep-forest/50 hover:text-deep-forest'}`}
+            >
+              Today
+            </button>
+            <button
+              onClick={() => setTimeframe('week')}
+              className={`px-4 py-1.5 rounded-md text-xs font-bold uppercase tracking-wider transition-all ${timeframe === 'week' ? 'bg-pathway-green text-white' : 'text-deep-forest/50 hover:text-deep-forest'}`}
+            >
+              7 Days
+            </button>
+            <button
+              onClick={() => setTimeframe('custom')}
+              className={`px-4 py-1.5 rounded-md text-xs font-bold uppercase tracking-wider transition-all ${timeframe === 'custom' ? 'bg-pathway-green text-white' : 'text-deep-forest/50 hover:text-deep-forest'}`}
+            >
+              Custom
+            </button>
+          </div>
+          
+          <Button onClick={exportCSV} variant="outline" className="h-8 bg-white border-deep-forest/20 text-deep-forest gap-2 shadow-sm">
+            <Download className="w-3.5 h-3.5" /> CSV Export
+          </Button>
         </div>
       </div>
 
-      <div className="divide-y divide-deep-forest/5">
-        {Object.entries(groupedEntries).length === 0 ? (
-          <div className="p-8 text-center text-deep-forest/50 italic">No time entries found for this period.</div>
-        ) : (
-          Object.entries(groupedEntries).map(([userId, userEntries]: [string, any]) => {
-            const totalMins = calculateTotalMinutes(userEntries);
-            const activeEntry = userEntries.find((e: any) => e.status === 'clocked_in');
-
-            return (
-              <div key={userId} className="p-6 flex flex-col gap-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <h4 className="font-bold text-lg text-deep-forest">{getProfileName(userId)}</h4>
-                    {activeEntry && (
-                      <span className="bg-pathway-green/10 text-pathway-green px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider animate-pulse">
-                        Clocked In
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-right">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-deep-forest/50">Total Time</p>
-                    <p className="text-xl font-black text-amber-porch">{formatHours(totalMins)}</p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
-                  {userEntries.map((entry: any) => (
-                    <div key={entry.id} className="bg-linen-white/30 rounded-xl p-4 border border-deep-forest/5 flex flex-col gap-2 relative group">
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <p className="text-xs font-bold text-deep-forest/60 uppercase tracking-wider flex items-center gap-1.5 mb-1">
-                            <CalendarIcon className="w-3 h-3" />
-                            {new Date(entry.clock_in_time).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}
-                          </p>
-                          <p className="text-sm font-bold text-deep-forest flex items-center gap-2">
-                            {new Date(entry.clock_in_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            <span className="text-deep-forest/30">→</span>
-                            {entry.clock_out_time ? new Date(entry.clock_out_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : <span className="text-amber-porch italic">Active</span>}
-                          </p>
-                        </div>
-                        <div className="flex flex-col items-end gap-2">
-                          {entry.duration_minutes !== undefined && entry.duration_minutes !== null && (
-                            <p className="text-sm font-bold text-pathway-green">{formatHours(entry.duration_minutes)}</p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-left border-collapse">
+          <thead>
+            <tr className="bg-linen-white/80 border-b border-deep-forest/10">
+              <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-deep-forest/50">Employee</th>
+              <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-deep-forest/50">Date</th>
+              <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-deep-forest/50">Clock In</th>
+              <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-deep-forest/50">Clock Out</th>
+              <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-deep-forest/50 text-right">Hours</th>
+              <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-deep-forest/50 text-right">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {Object.entries(groupedEntries).length === 0 ? (
+              <tr>
+                <td colSpan={6} className="p-12 text-center text-deep-forest/50 italic">
+                  No time entries found for this period.
+                </td>
+              </tr>
+            ) : (
+              Object.entries(groupedEntries).map(([userId, userEntries]: [string, any]) => {
+                const totalMins = calculateTotalMinutes(userEntries);
+                
+                return (
+                  <React.Fragment key={userId}>
+                    {/* User Header Row */}
+                    <tr className="bg-deep-forest/5 border-b border-deep-forest/10">
+                      <td colSpan={4} className="px-6 py-3 font-bold text-deep-forest">
+                        {getProfileName(userId)}
+                      </td>
+                      <td className="px-6 py-3 font-black text-amber-porch text-right">
+                        {formatHours(totalMins)}
+                      </td>
+                      <td></td>
+                    </tr>
+                    
+                    {/* Time Entries */}
+                    {userEntries.map((entry: any) => (
+                      <tr key={entry.id} className="border-b border-deep-forest/5 hover:bg-linen-white/30 transition-colors group">
+                        <td className="px-6 py-4">
+                          {entry.status === 'clocked_in' && (
+                            <span className="bg-pathway-green/10 text-pathway-green px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider animate-pulse">
+                              Active
+                            </span>
                           )}
+                          {entry.edited_by_admin && (
+                            <div className="flex items-center gap-1 text-[10px] font-bold text-amber-600 mt-1 uppercase tracking-wider" title={entry.admin_notes}>
+                              <AlertTriangle className="w-3 h-3" /> Edited
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-deep-forest/80 font-medium">
+                          {new Date(entry.clock_in_time).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-deep-forest">
+                          {new Date(entry.clock_in_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-deep-forest">
+                          {entry.clock_out_time ? (
+                            new Date(entry.clock_out_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                          ) : (
+                            <span className="text-amber-porch italic text-xs font-bold">Still working...</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 text-sm font-bold text-pathway-green text-right">
+                          {entry.duration_minutes ? formatHours(entry.duration_minutes) : '--'}
+                        </td>
+                        <td className="px-6 py-4 text-right">
                           <Button 
-                            variant="outline" 
+                            variant="ghost" 
                             size="sm" 
                             onClick={() => openEditModal(entry)}
-                            className="h-7 text-xs px-2 opacity-0 group-hover:opacity-100 transition-opacity absolute top-2 right-2 md:static md:opacity-100"
+                            className="h-8 text-xs text-deep-forest/50 hover:text-deep-forest hover:bg-deep-forest/5"
                           >
                             Edit
                           </Button>
-                        </div>
-                      </div>
-                      
-                      {/* Edited By Admin Badge */}
-                      {entry.edited_by_admin && (
-                        <div className="mt-2 bg-amber-500/10 border border-amber-500/20 p-2 rounded text-xs text-deep-forest">
-                          <p className="font-bold text-amber-600 flex items-center gap-1">
-                            <Clock className="w-3 h-3" /> Edited by Admin
-                          </p>
-                          <p className="text-deep-forest/70 mt-0.5">"{entry.admin_notes}"</p>
-                        </div>
-                      )}
-                      
-                      {/* Audit Log Trail */}
-                      {auditLogs.filter(log => log.record_id === entry.id && log.action === 'UPDATE').length > 0 && (
-                        <div className="mt-1 pt-2 border-t border-deep-forest/5 text-[10px] text-deep-forest/40">
-                          {auditLogs.filter(log => log.record_id === entry.id && log.action === 'UPDATE').length} previous versions in Audit Log
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            );
-          })
-        )}
+                        </td>
+                      </tr>
+                    ))}
+                  </React.Fragment>
+                );
+              })
+            )}
+          </tbody>
+        </table>
       </div>
 
       {/* ── Admin Edit Modal ── */}
       {editModalOpen && selectedEntry && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-deep-forest/80 backdrop-blur-sm">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl relative">
-            <h3 className="text-2xl font-black text-deep-forest mb-4">Override Time Card</h3>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-deep-forest/80 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl relative">
+            <div className="mb-6">
+              <h3 className="text-2xl font-black text-deep-forest">Modify Timecard</h3>
+              <p className="text-sm text-deep-forest/60 mt-1">Changes are legally logged in the database audit trail.</p>
+            </div>
             
-            <div className="space-y-4">
-              <div className="bg-linen-white p-3 rounded-lg border border-deep-forest/5 text-sm text-deep-forest/70">
-                <p><strong>Employee:</strong> {getProfileName(selectedEntry.user_id)}</p>
-                <p><strong>Clocked In:</strong> {new Date(selectedEntry.clock_in_time).toLocaleString()}</p>
-                <p><strong>Original Out:</strong> {selectedEntry.clock_out_time ? new Date(selectedEntry.clock_out_time).toLocaleString() : 'Active'}</p>
+            <div className="space-y-5">
+              <div className="bg-amber-porch/10 p-3 rounded-lg border border-amber-porch/20 text-sm text-deep-forest/80 flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <p><strong>Employee:</strong> {getProfileName(selectedEntry.user_id)}</p>
+                  <p className="mt-1 text-xs opacity-70">
+                    Previous modifications: {auditLogs.filter(log => log.record_id === selectedEntry.id && log.action === 'UPDATE').length}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-deep-forest/70 mb-1.5">Clock-In Date</label>
+                  <input type="date" value={editForm.clock_in_date} onChange={e => setEditForm({...editForm, clock_in_date: e.target.value})} className="w-full bg-linen-white border border-deep-forest/10 rounded-xl px-3 py-2.5 text-sm text-deep-forest focus:ring-2 focus:ring-pathway-green outline-none transition-all" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-deep-forest/70 mb-1.5">Clock-In Time</label>
+                  <input type="time" value={editForm.clock_in_time} onChange={e => setEditForm({...editForm, clock_in_time: e.target.value})} className="w-full bg-linen-white border border-deep-forest/10 rounded-xl px-3 py-2.5 text-sm text-deep-forest focus:ring-2 focus:ring-pathway-green outline-none transition-all" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-deep-forest/70 mb-1.5">Clock-Out Date</label>
+                  <input type="date" value={editForm.clock_out_date} onChange={e => setEditForm({...editForm, clock_out_date: e.target.value})} className="w-full bg-linen-white border border-deep-forest/10 rounded-xl px-3 py-2.5 text-sm text-deep-forest focus:ring-2 focus:ring-pathway-green outline-none transition-all" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-deep-forest/70 mb-1.5">Clock-Out Time</label>
+                  <input type="time" value={editForm.clock_out_time} onChange={e => setEditForm({...editForm, clock_out_time: e.target.value})} className="w-full bg-linen-white border border-deep-forest/10 rounded-xl px-3 py-2.5 text-sm text-deep-forest focus:ring-2 focus:ring-pathway-green outline-none transition-all" />
+                </div>
               </div>
 
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-deep-forest/70 mb-1">
-                  Corrected Clock Out Time
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-deep-forest/70 mb-1.5 flex justify-between">
+                  <span>Override Total Duration (Mins)</span>
+                  <span className="text-deep-forest/40">Optional</span>
                 </label>
-                <input 
-                  type="time" 
-                  value={editForm.clock_out_time}
-                  onChange={e => setEditForm({ ...editForm, clock_out_time: e.target.value })}
-                  className="w-full bg-linen-white border-0 rounded-xl px-4 py-3 text-deep-forest focus:ring-2 focus:ring-pathway-green transition-all"
-                />
+                <input type="number" value={editForm.duration_minutes} onChange={e => setEditForm({...editForm, duration_minutes: parseInt(e.target.value)})} placeholder="Auto-calculated if left at 0" className="w-full bg-linen-white border border-deep-forest/10 rounded-xl px-3 py-2.5 text-sm text-deep-forest focus:ring-2 focus:ring-pathway-green outline-none transition-all" />
               </div>
 
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-deep-forest/70 mb-1">
-                  Adjusted Total Minutes (Optional)
-                </label>
-                <input 
-                  type="number" 
-                  value={editForm.duration_minutes}
-                  onChange={e => setEditForm({ ...editForm, duration_minutes: parseInt(e.target.value) })}
-                  className="w-full bg-linen-white border-0 rounded-xl px-4 py-3 text-deep-forest focus:ring-2 focus:ring-pathway-green transition-all"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-deep-forest/70 mb-1">
-                  Admin Audit Reason (Required)
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-deep-forest/70 mb-1.5 flex items-center gap-1.5">
+                  Reason for Override <span className="text-red-500">*</span>
                 </label>
                 <textarea 
                   value={editForm.admin_notes}
                   onChange={e => setEditForm({ ...editForm, admin_notes: e.target.value })}
-                  className="w-full bg-linen-white border-0 rounded-xl px-4 py-3 text-deep-forest focus:ring-2 focus:ring-pathway-green transition-all h-24 resize-none"
-                  placeholder="e.g. Technician forgot to clock out, manually adjusted time."
+                  className="w-full bg-linen-white border border-deep-forest/10 rounded-xl px-4 py-3 text-sm text-deep-forest focus:ring-2 focus:ring-pathway-green outline-none transition-all h-20 resize-none"
+                  placeholder="Required for FLSA Compliance (e.g., 'Employee forgot to clock out at EOD')"
                 />
               </div>
 
-              <div className="pt-4 flex justify-end gap-3">
+              <div className="pt-2 flex justify-end gap-3">
                 <Button variant="ghost" onClick={() => setEditModalOpen(false)}>Cancel</Button>
-                <Button onClick={handleEditSubmit} className="bg-amber-porch text-deep-forest font-bold hover:bg-amber-porch/90">
-                  Force Override
+                <Button onClick={handleEditSubmit} className="bg-pathway-green text-white font-bold hover:brightness-110 shadow-lg shadow-pathway-green/20">
+                  Save Changes
                 </Button>
               </div>
             </div>

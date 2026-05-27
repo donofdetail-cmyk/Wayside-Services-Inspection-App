@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS public.d2d_leads (
   rep_name TEXT NOT NULL,
   lat FLOAT NOT NULL,
   lng FLOAT NOT NULL,
-  status TEXT NOT NULL CHECK (status IN ('not_home', 'not_interested', 'scheduled', 'completed')),
+  status TEXT NOT NULL CHECK (status IN ('new', 'not_home', 'not_interested', 'interested', 'scheduled', 'completed', 'closed_won', 'closed_lost')),
   address TEXT NOT NULL,
   contact_name TEXT,
   notes TEXT,
@@ -129,6 +129,9 @@ CREATE TABLE IF NOT EXISTS public.territory_zones (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   name TEXT NOT NULL,
   color TEXT DEFAULT '#1D3B34',
+  polygon_coordinates JSONB DEFAULT '[]'::jsonb,
+  service_block_start INT DEFAULT 1,
+  service_block_end INT DEFAULT 7,
   is_active BOOLEAN DEFAULT true,
   deleted_at TIMESTAMPTZ DEFAULT NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -172,8 +175,11 @@ CREATE TABLE IF NOT EXISTS public.service_agreements (
   property_id UUID REFERENCES public.properties(id) ON DELETE CASCADE,
   customer_id UUID REFERENCES public.customers(id) ON DELETE CASCADE,
   originated_by_rep_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  territory_zone_id UUID REFERENCES public.territory_zones(id) ON DELETE SET NULL,
   recurring_price DECIMAL(10, 2) NOT NULL,
   frequency TEXT NOT NULL,
+  contract_start_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  contract_end_date DATE NOT NULL,
   status TEXT DEFAULT 'active' CHECK (status IN ('active', 'paused', 'cancelled')),
   deleted_at TIMESTAMPTZ DEFAULT NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -185,11 +191,15 @@ CREATE TABLE IF NOT EXISTS public.service_agreements (
 CREATE TABLE IF NOT EXISTS public.service_tickets (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   agreement_id UUID REFERENCES public.service_agreements(id) ON DELETE CASCADE,
+  customer_id UUID REFERENCES public.customers(id) ON DELETE CASCADE,
+  property_id UUID REFERENCES public.properties(id) ON DELETE CASCADE,
   scheduled_start TIMESTAMP WITH TIME ZONE,
   scheduled_end TIMESTAMP WITH TIME ZONE,
   assigned_tech_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
-  type TEXT DEFAULT 'recurring' CHECK (type IN ('initial', 'recurring', 'reservice')),
-  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'skipped', 'cancelled')),
+  type TEXT DEFAULT 'recurring' CHECK (type IN ('initial', 'recurring', 'reservice', 'one-off')),
+  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'scheduled', 'completed', 'skipped', 'cancelled')),
+  price DECIMAL(10, 2),
+  notes TEXT,
   completed_at TIMESTAMP WITH TIME ZONE,
   is_time_locked BOOLEAN DEFAULT false,
   deleted_at TIMESTAMPTZ DEFAULT NULL,
@@ -380,3 +390,22 @@ $$;
 
 -- Storage Bucket Setup (for PDFs)
 INSERT INTO storage.buckets (id, name, public) VALUES ('reports', 'reports', true) ON CONFLICT (id) DO NOTHING;
+
+-- ==============================================================================
+-- 15) LATE-STAGE FOREIGN KEY RELATIONSHIPS
+-- Added here to ensure referenced tables (customers, properties) exist
+-- ==============================================================================
+
+ALTER TABLE public.inspections ADD COLUMN IF NOT EXISTS customer_id UUID REFERENCES public.customers(id) ON DELETE SET NULL;
+ALTER TABLE public.inspections ADD COLUMN IF NOT EXISTS property_id UUID REFERENCES public.properties(id) ON DELETE SET NULL;
+ALTER TABLE public.client_notes ADD COLUMN IF NOT EXISTS property_id UUID REFERENCES public.properties(id) ON DELETE CASCADE;
+ALTER TABLE public.client_touchpoints ADD COLUMN IF NOT EXISTS client_id UUID REFERENCES public.customers(id) ON DELETE CASCADE;
+
+-- ==============================================================================
+-- 16) UPDATE EXISTING TABLES WITH NEW COLUMNS
+-- ==============================================================================
+ALTER TABLE public.territory_zones ADD COLUMN IF NOT EXISTS service_block_start INT DEFAULT 1;
+ALTER TABLE public.territory_zones ADD COLUMN IF NOT EXISTS service_block_end INT DEFAULT 7;
+
+-- Force Supabase to reload its API Schema Cache
+NOTIFY pgrst, 'reload schema';

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../d2d/supabaseClient';
 import { Toaster, toast } from 'sonner';
 import { TerritoryZone, Customer, Property, ServiceAgreement, ServiceTicket } from '../types';
-import { Menu, LayoutDashboard, Users, ClipboardList, LogOut, Loader2, MapPin, Search, FileText, Download, X, Calendar as CalendarIcon, BarChart3, Inbox, Clock, Send, Settings, Mail, ChevronDown, ChevronLeft, ChevronRight, Map } from 'lucide-react';
+import { Menu, LayoutDashboard, Users, ClipboardList, LogOut, Loader2, MapPin, Search, FileText, Download, X, Calendar, Calendar as CalendarIcon, BarChart3, Inbox, Clock, Send, Settings, Mail, ChevronDown, ChevronLeft, ChevronRight, Map, Phone } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { format, parseISO, startOfWeek, addDays, isSameDay } from 'date-fns';
@@ -10,8 +10,10 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveCont
 import { Logo } from '../components/Logo';
 import { DispatchMap } from './components/DispatchMap';
 
-type AdminTab = 'dashboard' | 'clients' | 'scheduling' | 'action_center' | 'inspections' | 'leads' | 'territories' | 'team' | 'settings' | 'payroll';
+type AdminTab = 'dashboard' | 'clients' | 'scheduling' | 'action_center' | 'inspections' | 'leads' | 'territories' | 'team' | 'settings' | 'payroll' | 'subscriptions';
 import { TimesheetDashboard } from './components/TimesheetDashboard';
+import { AutomationRules } from './components/AutomationRules';
+import { SmartDispatchCenter } from './components/SmartDispatchCenter';
 export default function AdminApp({ session, profile }: { session: any, profile: any }) {
   const [adminName, setAdminName] = useState<string | null>(profile?.full_name || null);
   const [activeTab, setActiveTab] = useState<AdminTab>('dashboard');
@@ -36,6 +38,8 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
   const [selectedCalDay, setSelectedCalDay] = useState<number | null>(null);
   const [scheduleModal, setScheduleModal] = useState<any | null>(null);
   const [scheduleForm, setScheduleForm] = useState({ start: '', end: '', techId: '', zoneId: '', price: '', frequency: 'bi-monthly' });
+  const [conversionModal, setConversionModal] = useState<string | null>(null);
+  const [conversionForm, setConversionForm] = useState({ zoneId: '', price: '99.00', frequency: 'monthly' });
   const [messageTemplates, setMessageTemplates] = useState<{id: string, name: string, type: 'sms'|'email', content: string}[]>([]);
   const [templates, setTemplates] = useState<any[]>([]);
 
@@ -46,7 +50,7 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
   const [serviceAgreements, setServiceAgreements] = useState<ServiceAgreement[]>([]);
   const [serviceTickets, setServiceTickets] = useState<ServiceTicket[]>([]);
   const [zoneModalOpen, setZoneModalOpen] = useState(false);
-  const [zoneForm, setZoneForm] = useState({ name: '', color: '#1D3B34' });
+  const [zoneForm, setZoneForm] = useState({ name: '', color: '#1D3B34', startDay: 1, endDay: 7 });
   const [selectedZone, setSelectedZone] = useState<TerritoryZone | null>(null);
 
   // Phase 13: Time Tracking & Audit Logs
@@ -54,7 +58,10 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
 
   const [clientModalOpen, setClientModalOpen] = useState(false);
-  const [clientForm, setClientForm] = useState<{id?: string, full_name: string, email: string, phone: string}>({ full_name: '', email: '', phone: '' });
+  const [clientForm, setClientForm] = useState<{
+    id?: string, full_name: string, email: string, phone: string,
+    address?: string, zoneId?: string, price?: string, frequency?: string, propertyId?: string, agreementId?: string
+  }>({ full_name: '', email: '', phone: '', address: '', zoneId: '', price: '', frequency: 'monthly' });
 
   const formatSeconds = (s: number) => {
     if (!s) return 'Unknown';
@@ -100,7 +107,7 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
           supabase.from('client_notes').select('*, property:properties(address)').order('created_at', { ascending: false }),
           supabase.from('communication_logs').select('*').order('created_at', { ascending: false }),
           supabase.from('territory_zones').select('*').order('created_at', { ascending: true }),
-          supabase.from('service_tickets').select('*').order('created_at', { ascending: false }),
+          supabase.from('service_tickets').select('*, customer:customers(full_name), property:properties(address, lat, lng), agreement:service_agreements(territory_zone_id)').order('created_at', { ascending: false }),
           supabase.from('service_agreements').select('*'),
           supabase.from('properties').select('*'),
           supabase.from('customers').select('*'),
@@ -196,20 +203,40 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
   }, [adminName]);
 
   // --- Handlers for Territory Zones ---
-  const handleCreateZone = async () => {
+  const handleSaveZone = async () => {
     if (!zoneForm.name.trim()) return toast.error("Zone name required");
-    const { data, error } = await supabase.from('territory_zones').insert([{
-      name: zoneForm.name,
-      color: zoneForm.color
-    }]).select().single();
     
-    if (error) {
-      toast.error("Failed to create zone");
+    if (selectedZone) {
+      const { data, error } = await supabase.from('territory_zones').update({
+        name: zoneForm.name,
+        color: zoneForm.color,
+        service_block_start: zoneForm.startDay,
+        service_block_end: zoneForm.endDay
+      }).eq('id', selectedZone.id).select().single();
+      
+      if (error) toast.error("Failed to update zone: " + error.message);
+      else {
+        toast.success("Zone updated");
+        setTerritoryZones(prev => prev.map(z => z.id === selectedZone.id ? data : z));
+        setZoneModalOpen(false);
+        setSelectedZone(null);
+      }
     } else {
-      toast.success("Zone created");
-      setTerritoryZones(prev => [...prev, data]);
-      setZoneModalOpen(false);
-      setZoneForm({ name: '', color: '#1D3B34' });
+      const { data, error } = await supabase.from('territory_zones').insert([{
+        name: zoneForm.name,
+        color: zoneForm.color,
+        service_block_start: zoneForm.startDay,
+        service_block_end: zoneForm.endDay
+      }]).select().single();
+      
+      if (error) {
+        toast.error("Failed to create zone: " + error.message);
+      } else {
+        toast.success("Zone created");
+        setTerritoryZones(prev => [...prev, data]);
+        setZoneModalOpen(false);
+        setZoneForm({ name: '', color: '#1D3B34', startDay: 1, endDay: 7 });
+      }
     }
   };
 
@@ -219,36 +246,89 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
     else setTerritoryZones(prev => prev.map(z => z.id === id ? { ...z, is_active: !currentStatus } : z));
   };
 
+  const handleDeleteZone = async (id: string) => {
+    if (!confirm('Are you sure you want to permanently delete this zone?')) return;
+    const { error } = await supabase.from('territory_zones').delete().eq('id', id);
+    if (error) toast.error("Failed to delete zone: " + error.message);
+    else {
+      toast.success("Zone deleted");
+      setTerritoryZones(prev => prev.filter(z => z.id !== id));
+      // Optionally handle properties that were in this zone (they will have territory_zone_id set to NULL by the schema)
+    }
+  };
+
 
   const handleSaveClient = async () => {
     if (!clientForm.full_name.trim()) return toast.error("Full Name is required");
+    if (!clientForm.address?.trim()) return toast.error("Address is required");
+    if (!clientForm.zoneId) return toast.error("Territory Zone is required");
+    if (!clientForm.price) return toast.error("Service Price is required");
     
     if (clientForm.id) {
-      const { error } = await supabase.from('customers').update({
+      // Update Customer
+      const { error: custErr } = await supabase.from('customers').update({
         full_name: clientForm.full_name,
         email: clientForm.email,
         phone: clientForm.phone
       }).eq('id', clientForm.id);
       
-      if (error) toast.error("Failed to update client");
-      else {
-        toast.success("Client updated!");
-        setCustomers(prev => prev.map(c => c.id === clientForm.id ? { ...c, ...clientForm } as any : c));
-        setClientModalOpen(false);
+      if (custErr) return toast.error("Failed to update client profile");
+
+      // Update Property
+      if (clientForm.propertyId) {
+        await supabase.from('properties').update({
+          address: clientForm.address,
+          territory_zone_id: clientForm.zoneId
+        }).eq('id', clientForm.propertyId);
       }
+
+      // Update Agreement
+      if (clientForm.agreementId) {
+        await supabase.from('service_agreements').update({
+          recurring_price: parseFloat(clientForm.price || '0'),
+          frequency: clientForm.frequency,
+          territory_zone_id: clientForm.zoneId
+        }).eq('id', clientForm.agreementId);
+      }
+      
+      toast.success("Client updated successfully!");
+      // To reflect changes, we can reload the page or optimistically update state
+      // We will reload the page for safety since data is relational
+      window.location.reload();
+      
     } else {
-      const { data, error } = await supabase.from('customers').insert([{
+      // Create Customer
+      const { data: customerData, error: custErr } = await supabase.from('customers').insert([{
         full_name: clientForm.full_name,
         email: clientForm.email,
         phone: clientForm.phone
       }]).select().single();
       
-      if (error) toast.error("Failed to create client");
-      else {
-        toast.success("Client added!");
-        setCustomers(prev => [...prev, data]);
-        setClientModalOpen(false);
-      }
+      if (custErr || !customerData) return toast.error("Failed to create client");
+
+      // Create Property
+      const { data: propertyData, error: propErr } = await supabase.from('properties').insert([{
+        customer_id: customerData.id,
+        address: clientForm.address,
+        territory_zone_id: clientForm.zoneId
+      }]).select().single();
+
+      if (propErr || !propertyData) return toast.error("Failed to create property");
+
+      // Create Agreement
+      const { error: agErr } = await supabase.from('service_agreements').insert([{
+        property_id: propertyData.id,
+        customer_id: customerData.id,
+        recurring_price: parseFloat(clientForm.price || '0'),
+        frequency: clientForm.frequency,
+        territory_zone_id: clientForm.zoneId,
+        status: 'active'
+      }]);
+
+      if (agErr) return toast.error("Failed to create service agreement");
+
+      toast.success("Client added successfully!");
+      window.location.reload();
     }
   };
 
@@ -274,165 +354,101 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
       setCustomers(prev => prev.map(c => c.id === id ? { ...c, deleted_at: null } as any : c));
     }
   };
+
   const renderDashboard = () => {
-    const totalLeads = leads.length;
-    const appointmentsSet = leads.filter(l => l.status === 'scheduled').length;
-    const conversionRate = totalLeads > 0 ? Math.round((appointmentsSet / totalLeads) * 100) : 0;
+    // 1. Financial Snapshots
+    const activeMRR = serviceAgreements.filter(a => a.status === 'active').reduce((sum, a) => sum + Number(a.recurring_price), 0);
+    const activeContracts = serviceAgreements.filter(a => a.status === 'active').length;
     
-    // Group leads by rep
+    // 2. Logistics Snapshots
+    const todayStr = new Date().toISOString().split('T')[0];
+    const todaysTickets = serviceTickets.filter(t => t.status === 'scheduled' && (t.scheduled_start || '').startsWith(todayStr));
+    const unassignedTickets = serviceTickets.filter(t => t.status === 'scheduled' && !t.assigned_tech_id).length;
+    
+    // 3. Rep Performance
     const repStats = leads.reduce((acc, lead) => {
       acc[lead.rep_name] = acc[lead.rep_name] || { total: 0, appointments: 0 };
       acc[lead.rep_name].total++;
       if (lead.status === 'scheduled') acc[lead.rep_name].appointments++;
       return acc;
     }, {} as Record<string, { total: number, appointments: number }>);
-    
-    const topReps = Object.entries(repStats)
-      .sort((a, b) => (b[1] as any).appointments - (a[1] as any).appointments)
-      .slice(0, 3);
+    const topReps = Object.entries(repStats).sort((a, b) => (b[1] as any).appointments - (a[1] as any).appointments).slice(0, 3);
 
     return (
       <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
         <div className="flex justify-between items-center">
-          <h3 className="text-xl font-bold text-deep-forest flex items-center gap-2">
-            <LayoutDashboard className="w-5 h-5 text-amber-porch" /> Overview
-          </h3>
+          <div>
+            <h2 className="text-2xl font-bold text-deep-forest flex items-center gap-2">
+              <LayoutDashboard className="w-6 h-6 text-pathway-green" /> Dashboard Overview
+            </h2>
+            <p className="text-sm text-deep-forest/60 mt-1">High-level metrics and daily dispatch status.</p>
+          </div>
         </div>
+
+        {/* Core Metrics */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-white p-6 rounded-2xl shadow-xl border border-deep-forest/5 flex flex-col items-center justify-center text-center">
-            <div className="w-16 h-16 bg-pathway-green/10 text-pathway-green rounded-full flex items-center justify-center mb-4">
-              <ClipboardList className="w-8 h-8" />
-            </div>
-            <h3 className="text-3xl font-bold text-deep-forest mb-1">{inspections.length}</h3>
-            <p className="text-sm font-bold uppercase tracking-wider text-deep-forest/50">Total Inspections</p>
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-deep-forest/10 flex flex-col justify-center relative overflow-hidden">
+            <p className="text-deep-forest/50 text-xs font-bold uppercase tracking-wider mb-2">Total Active MRR</p>
+            <h3 className="text-4xl font-bold text-deep-forest mb-1">${activeMRR.toLocaleString()}</h3>
+            <p className="text-pathway-green text-sm font-medium">Across {activeContracts} Active Contracts</p>
           </div>
-          <div className="bg-white p-6 rounded-2xl shadow-xl border border-deep-forest/5 flex flex-col items-center justify-center text-center">
-            <div className="w-16 h-16 bg-amber-porch/10 text-amber-porch rounded-full flex items-center justify-center mb-4">
-              <MapPin className="w-8 h-8" />
-            </div>
-            <h3 className="text-3xl font-bold text-deep-forest mb-1">{totalLeads}</h3>
-            <p className="text-sm font-bold uppercase tracking-wider text-deep-forest/50">D2D Leads Logged</p>
+
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-deep-forest/10 flex flex-col justify-center">
+            <p className="text-deep-forest/50 text-xs font-bold uppercase tracking-wider mb-2">Today's Dispatch</p>
+            <h3 className="text-4xl font-bold text-deep-forest mb-1">{todaysTickets.length} Stops</h3>
+            <p className="text-amber-600 text-sm font-medium">{unassignedTickets} tickets unassigned</p>
           </div>
-          <div className="bg-white p-6 rounded-2xl shadow-xl border border-deep-forest/5 flex flex-col items-center justify-center text-center">
-            <div className="w-16 h-16 bg-deep-forest/10 text-deep-forest rounded-full flex items-center justify-center mb-4">
-              <Users className="w-8 h-8" />
-            </div>
-            <h3 className="text-3xl font-bold text-deep-forest mb-1">{conversionRate}%</h3>
-            <p className="text-sm font-bold uppercase tracking-wider text-deep-forest/50">Appt Conversion Rate</p>
+
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-deep-forest/10 flex flex-col justify-center">
+             <p className="text-deep-forest/50 text-xs font-bold uppercase tracking-wider mb-2">Lead Conversion</p>
+             <h3 className="text-4xl font-bold text-deep-forest mb-1">
+               {leads.length > 0 ? Math.round((leads.filter(l => l.stage === 'closed_won').length / leads.length) * 100) : 0}%
+             </h3>
+             <p className="text-deep-forest/60 text-sm font-medium">Knock to Contract Ratio</p>
           </div>
         </div>
 
-        {/* ── Today's Scheduled Jobs Banner ── */}
-        {(() => {
-          const todayStr = new Date().toISOString().split('T')[0];
-          const todaysJobs = leads.filter(l => l.status === 'scheduled' && (l.scheduled_start || '').startsWith(todayStr));
-          return (
-            <div className="bg-deep-forest rounded-2xl p-6 text-white flex flex-col sm:flex-row items-start sm:items-center gap-6">
-              <div className="shrink-0">
-                <p className="text-white/50 text-[10px] font-bold uppercase tracking-wider mb-1">Today's Jobs</p>
-                <p className="text-5xl font-bold leading-none">{todaysJobs.length}</p>
-                <p className="text-white/40 text-xs mt-2">{new Date().toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' })}</p>
-              </div>
-              <div className="flex-1 w-full">
-                {todaysJobs.length === 0 ? (
-                  <p className="text-white/40 text-sm italic">No jobs scheduled for today — all clear!</p>
-                ) : (
-                  <div className="flex flex-col gap-2 max-h-36 overflow-y-auto pr-1">
-                    {todaysJobs.map(j => (
-                      <div key={j.id} className="bg-white/10 hover:bg-white/15 transition-colors rounded-xl px-4 py-2.5 flex items-center gap-3">
-                        <div className="w-2 h-2 rounded-full bg-pathway-green shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-bold leading-none truncate">{j.contact_name || 'Resident'}</p>
-                          <p className="text-xs text-white/50 truncate mt-0.5">{j.address}</p>
-                        </div>
-                        <span className="text-xs font-bold text-pathway-green bg-pathway-green/20 px-2 py-0.5 rounded-md shrink-0">
-                          {profiles.find(p => p.id === j.assigned_tech_id)?.full_name || 'Unassigned'}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })()}
-
+        {/* Live Pulse Map Placeholder & Top Reps */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="bg-white p-6 rounded-2xl shadow-xl border border-deep-forest/5 lg:col-span-1">
-            <h3 className="text-lg font-bold text-deep-forest mb-4">Top Performing Reps</h3>
-            <div className="divide-y divide-deep-forest/5">
+          <div className="bg-white rounded-2xl shadow-sm border border-deep-forest/10 lg:col-span-2 overflow-hidden flex flex-col min-h-[400px]">
+            <div className="p-5 border-b border-deep-forest/5 flex justify-between items-center bg-white z-10">
+              <h3 className="text-lg font-bold text-deep-forest flex items-center gap-2">
+                <MapPin className="w-5 h-5 text-pathway-green" /> Territory Map
+              </h3>
+            </div>
+            <div className="flex-1 bg-gray-50 relative">
+               <DispatchMap 
+                 leads={serviceTickets as any} 
+                 profiles={profiles} 
+                 onAssignTech={async () => {}} 
+                 onScheduleTime={async () => {}} 
+                 hideSidebar={true}
+                 territoryZones={territoryZones}
+               />
+            </div>
+          </div>
+
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-deep-forest/10 lg:col-span-1 flex flex-col">
+            <h3 className="text-lg font-bold text-deep-forest mb-6">Top Sales Reps</h3>
+            <div className="flex-1 flex flex-col gap-4">
               {topReps.map(([name, stats]: [string, any], idx) => (
-                <div key={name} className="py-3 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-deep-forest/5 flex items-center justify-center text-sm font-bold text-deep-forest">
-                      {idx + 1}
+                <div key={name} className="p-4 rounded-xl bg-linen-white border border-deep-forest/5 flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm ${
+                      idx === 0 ? 'bg-amber-porch text-white' :
+                      idx === 1 ? 'bg-gray-300 text-gray-700' :
+                      'bg-orange-200 text-orange-800'
+                    }`}>
+                      #{idx + 1}
                     </div>
-                    <span className="font-bold text-deep-forest">{name}</span>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-sm font-bold text-pathway-green">{stats.appointments} Appts</span>
-                    <span className="text-xs text-deep-forest/40 ml-2">({stats.total} doors)</span>
+                    <div>
+                      <span className="font-bold text-deep-forest block">{name}</span>
+                      <span className="text-xs text-deep-forest/50">{stats.appointments} Contracts</span>
+                    </div>
                   </div>
                 </div>
               ))}
-              {topReps.length === 0 && <p className="text-sm text-deep-forest/50 py-2">No leads logged yet.</p>}
             </div>
-          </div>
-          <div className="bg-white p-6 rounded-2xl shadow-xl border border-deep-forest/5 lg:col-span-2">
-            <h3 className="text-lg font-bold text-deep-forest mb-4 flex items-center gap-2"><BarChart3 className="w-5 h-5 text-amber-porch" /> 7-Day Performance</h3>
-            {(() => {
-              const last7Days = Array.from({length: 7}).map((_, i) => {
-                const d = new Date();
-                d.setDate(d.getDate() - (6 - i));
-                return d.toISOString().split('T')[0];
-              });
-              const chartData = last7Days.map(date => ({
-                date: date.substring(5),
-                leads: leads.filter(l => l.created_at.startsWith(date)).length,
-                inspections: inspections.filter(ins => ins.created_at.startsWith(date)).length
-              }));
-              return (
-                <div className="h-64 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={chartData}>
-                      <XAxis dataKey="date" stroke="#102e2150" fontSize={12} />
-                      <YAxis stroke="#102e2150" fontSize={12} allowDecimals={false} />
-                      <RechartsTooltip cursor={{fill: '#f5efe6'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}} />
-                      <Bar dataKey="leads" name="New Leads" fill="#1D9E75" radius={[4,4,0,0]} />
-                      <Bar dataKey="inspections" name="Completed Inspections" fill="#f0a500" radius={[4,4,0,0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              );
-            })()}
-          </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-2xl shadow-xl border border-deep-forest/5">
-          <h3 className="text-lg font-bold text-deep-forest mb-4 flex items-center gap-2"><Users className="w-5 h-5 text-amber-porch" /> Technician Leaderboard</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {(() => {
-              const techStats = profiles.filter(p => p.role === 'technician').map(tech => {
-                const techInspections = inspections.filter(i => i.technician_id === tech.id);
-                const avgDuration = techInspections.length ? techInspections.reduce((acc, i) => acc + (i.duration_seconds || 0), 0) / techInspections.length : 0;
-                return { name: tech.full_name, total: techInspections.length, avgDuration: Math.round(avgDuration / 60) };
-              }).sort((a, b) => b.total - a.total);
-              
-              if (techStats.length === 0) return <p className="text-sm text-deep-forest/50 py-2">No technicians found.</p>;
-              
-              return techStats.map((t, idx) => (
-                <div key={idx} className="flex items-center justify-between p-4 border border-deep-forest/10 rounded-xl">
-                  <div className="flex items-center gap-3">
-                    <span className="font-bold text-amber-porch text-lg w-6">{idx + 1}</span>
-                    <span className="font-bold text-deep-forest">{t.name}</span>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-bold text-pathway-green">{t.total} Inspections</p>
-                    <p className="text-xs text-deep-forest/60">Avg. {t.avgDuration} mins</p>
-                  </div>
-                </div>
-              ));
-            })()}
           </div>
         </div>
       </div>
@@ -667,7 +683,7 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
   );
 
   const filteredLeads = leads.filter(l => 
-    l.status !== 'scheduled' && (
+    l.status !== 'scheduled' && l.status !== 'contract' && (
       (l.contact_name || '').toLowerCase().includes(leadSearch.toLowerCase()) || 
       (l.address || '').toLowerCase().includes(leadSearch.toLowerCase()) ||
       (l.rep_name || '').toLowerCase().includes(leadSearch.toLowerCase())
@@ -700,97 +716,140 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
   };
 
   const renderClientProfile = (c: any) => {
+    // Collect all history items for the timeline
+    const timelineItems = [
+      { date: c.created_at, title: 'Customer Acquired', desc: 'First registered in system', type: 'system', icon: Users, color: 'bg-blue-500' }
+    ];
+
+    if (c.agreements) {
+      c.agreements.forEach((ag: any) => {
+        timelineItems.push({ date: ag.created_at, title: 'Contract Signed', desc: `$${ag.recurring_price}/${ag.frequency}`, type: 'contract', icon: FileText, color: 'bg-amber-porch' });
+      });
+    }
+
+    serviceTickets.filter(t => t.customer_id === c.id && t.status === 'completed').forEach(t => {
+      timelineItems.push({ date: t.completed_at || t.created_at, title: 'Service Completed', desc: t.type + ' service performed', type: 'service', icon: MapPin, color: 'bg-pathway-green' });
+    });
+    
+    // Sort timeline descending
+    timelineItems.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
     return (
-      <div className="bg-white rounded-2xl shadow-xl border border-deep-forest/5 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
-        <div className="p-6 border-b border-deep-forest/10 flex items-center gap-4 bg-deep-forest text-white">
-          <button onClick={() => setSelectedClient(null)} className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors">
+      <div className="bg-white rounded-2xl shadow-sm border border-deep-forest/10 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500 flex flex-col h-[calc(100vh-8rem)]">
+        {/* Header Hero */}
+        <div className="p-8 border-b border-deep-forest/10 flex items-start gap-6 bg-deep-forest text-white shrink-0 relative">
+          <button onClick={() => setSelectedClient(null)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 transition-colors z-10 shrink-0">
             <X className="w-4 h-4" />
           </button>
-          <div className="flex-1 flex justify-between items-center">
-            <div>
-              <h3 className="text-2xl font-bold">{c.full_name}</h3>
-              <p className="text-white/60 text-sm">Customer since {new Date(c.created_at).getFullYear()}</p>
-            </div>
+          <div className="flex-1 z-10">
+            <h3 className="text-3xl font-bold mb-1">{c.full_name}</h3>
+            <p className="text-white/80 text-sm flex items-center gap-4">
+              <span className="flex items-center gap-1"><Phone className="w-3 h-3" /> {c.phone || 'No Phone'}</span>
+              <span className="flex items-center gap-1"><Inbox className="w-3 h-3" /> {c.email || 'No Email'}</span>
+            </p>
+          </div>
+          <div className="text-right z-10 shrink-0 flex flex-col items-end justify-between h-full">
             <div className="text-right">
-              <p className="text-[10px] uppercase font-bold text-white/50 tracking-wider">Total Value (ARR)</p>
-              <p className="text-2xl font-bold text-pathway-green">${c.totalArr.toLocaleString()}</p>
+              <p className="text-[10px] uppercase font-bold text-white/50 tracking-wider mb-1">Total ARR Value</p>
+              <p className="text-3xl font-bold text-pathway-green">${c.totalArr ? c.totalArr.toLocaleString() : 0}</p>
             </div>
+            <Button 
+              onClick={() => {
+                const prop = c.properties?.[0];
+                const ag = c.agreements?.[0];
+                setClientForm({
+                  id: c.id,
+                  full_name: c.full_name,
+                  email: c.email || '',
+                  phone: c.phone || '',
+                  address: prop?.address || '',
+                  zoneId: prop?.territory_zone_id || '',
+                  price: ag?.recurring_price?.toString() || '',
+                  frequency: ag?.frequency || 'monthly',
+                  propertyId: prop?.id,
+                  agreementId: ag?.id
+                });
+                setClientModalOpen(true);
+              }}
+              variant="outline"
+              className="mt-4 border-white/20 text-white hover:bg-white/10 hover:text-white h-8 text-xs font-bold"
+            >
+              Edit Profile
+            </Button>
           </div>
         </div>
         
-        <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Left Column: Info & Notes */}
-          <div className="lg:col-span-1 space-y-6">
-            <div className="bg-linen-white/30 p-4 rounded-xl border border-deep-forest/10">
-              <h4 className="font-bold text-deep-forest mb-3">Contact Information</h4>
-              <p className="text-sm text-deep-forest/70 mb-1"><strong className="text-deep-forest">Phone:</strong> {c.phone || 'N/A'}</p>
-              <p className="text-sm text-deep-forest/70"><strong className="text-deep-forest">Email:</strong> {c.email || 'N/A'}</p>
-            </div>
+        <div className="flex-1 overflow-y-auto p-8 grid grid-cols-1 lg:grid-cols-3 gap-8 bg-linen-white/30">
+          
+          {/* Left Column: Properties & Notes */}
+          <div className="lg:col-span-1 flex flex-col gap-6">
 
-            <div className="bg-linen-white/30 p-4 rounded-xl border border-deep-forest/10">
-              <h4 className="font-bold text-deep-forest mb-3 flex items-center gap-2"><FileText className="w-4 h-4 text-amber-porch" /> Add Note</h4>
+            <div className="bg-white p-5 rounded-xl shadow-sm border border-deep-forest/5">
+              <h4 className="font-bold text-deep-forest mb-3 flex items-center gap-2"><FileText className="w-4 h-4 text-pathway-green" /> Internal Notes</h4>
               <form onSubmit={async (e) => {
                 e.preventDefault();
                 const form = e.target as HTMLFormElement;
                 const input = form.elements.namedItem('note') as HTMLTextAreaElement;
                 if (!input.value.trim()) return;
-                // Hack: store note on their first property for now, since notes currently tie to properties
-                const address = c.properties[0]?.address || 'Unknown';
+                const address = c.properties?.[0]?.address || 'Unknown';
                 const { error } = await supabase.from('client_notes').insert([{ property_address: address, content: input.value, author_name: adminName }]);
                 if (!error) { toast.success('Note added'); input.value = ''; }
                 else toast.error('Failed to add note');
               }}>
-                <textarea name="note" className="w-full text-sm p-3 border border-deep-forest/10 rounded-xl bg-white resize-none focus:outline-none mb-2" rows={3} placeholder="Type a note here..." required></textarea>
-                <Button type="submit" className="w-full bg-pathway-green text-white hover:brightness-110 font-bold h-9">Save Note</Button>
+                <textarea name="note" className="w-full text-sm p-3 border border-deep-forest/10 rounded-lg bg-linen-white/50 resize-none focus:outline-none focus:border-pathway-green mb-3 transition-colors" rows={3} placeholder="Add context..." required></textarea>
+                <Button type="submit" className="w-full bg-deep-forest text-white hover:bg-deep-forest/90 font-bold">Save Note</Button>
               </form>
+            </div>
+
+            <div className="bg-white p-5 rounded-xl shadow-sm border border-deep-forest/5">
+              <h4 className="font-bold text-deep-forest mb-3">Properties & Contracts</h4>
+              <div className="flex flex-col gap-3">
+                {!c.properties || c.properties.length === 0 ? <p className="text-xs text-deep-forest/40">No properties linked.</p> : c.properties.map((p: any, i: number) => {
+                  const agreement = c.agreements?.find((a: any) => a.property_id === p.id);
+                  const zone = territoryZones.find(z => z.id === p.territory_zone_id);
+                  return (
+                    <div key={i} className="p-3 rounded-lg border border-deep-forest/10 bg-linen-white/50 relative overflow-hidden">
+                      <div className="absolute left-0 top-0 bottom-0 w-1" style={{ backgroundColor: zone?.color || '#1D3B34' }}></div>
+                      <p className="font-bold text-deep-forest text-sm leading-tight pl-2">{p.address}</p>
+                      <p className="text-[10px] text-deep-forest/50 uppercase tracking-wider pl-2 mt-0.5">{zone?.name || 'Unassigned Zone'}</p>
+                      {agreement && (
+                        <div className="mt-2 pl-2 pt-2 border-t border-deep-forest/5 flex items-center justify-between">
+                          <span className="text-xs text-deep-forest/60 capitalize">{agreement.frequency}</span>
+                          <span className="text-sm font-bold text-pathway-green">${agreement.recurring_price}/mo</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
 
-          {/* Right Column: Properties and Agreements */}
+          {/* Right Column: Visual Timeline */}
           <div className="lg:col-span-2">
-            <h4 className="font-bold text-deep-forest mb-4 flex items-center gap-2"><MapPin className="w-4 h-4 text-amber-porch" /> Properties & Agreements</h4>
-            <div className="space-y-4">
-              {c.properties.length === 0 ? <p className="text-sm text-deep-forest/50">No properties linked.</p> : c.properties.map((p: any, i: number) => {
-                const agreement = c.agreements.find((a: any) => a.property_id === p.id);
-                const zone = territoryZones.find(z => z.id === p.territory_zone_id);
-                const pTickets = serviceTickets.filter(t => t.agreement_id === agreement?.id);
-
-                return (
-                  <div key={i} className="bg-white p-5 rounded-xl border border-deep-forest/10 shadow-sm relative overflow-hidden">
-                    <div className="absolute left-0 top-0 bottom-0 w-1.5" style={{ backgroundColor: zone?.color || '#1D3B34' }}></div>
-                    <div className="flex items-center justify-between mb-4 pl-3">
-                      <div>
-                        <span className="font-bold text-lg text-deep-forest block leading-tight">{p.address}</span>
-                        <span className="text-xs font-bold text-deep-forest/50 uppercase tracking-wider">{zone?.name || 'Unassigned Zone'}</span>
-                      </div>
-                      {agreement && (
-                        <div className="text-right">
-                          <span className="text-[10px] uppercase font-bold text-deep-forest/40 tracking-wider block">Service Price</span>
-                          <span className="font-bold text-deep-forest text-lg">${agreement.recurring_price} <span className="text-xs font-normal text-deep-forest/50 capitalize">/ {agreement.frequency.replace('-', ' ')}</span></span>
-                        </div>
-                      )}
-                    </div>
-                    
-                    <div className="border-t border-deep-forest/5 pt-3 mt-3 pl-3">
-                      <p className="text-xs font-bold text-deep-forest mb-2">Recent Service Tickets:</p>
-                      {pTickets.length === 0 ? <p className="text-xs text-deep-forest/40 italic">No tickets generated yet.</p> : (
-                        <div className="space-y-1">
-                          {pTickets.slice(0,3).map((t: any, idx: number) => (
-                            <div key={idx} className="flex items-center justify-between text-xs bg-linen-white/30 p-2 rounded">
-                              <span className="capitalize font-medium text-deep-forest">{t.type} Service</span>
-                              <span className="font-bold text-deep-forest/60">
-                                {t.scheduled_start ? new Date(t.scheduled_start).toLocaleDateString() : 'Unscheduled'}
-                                {t.status === 'completed' && <span className="ml-2 text-pathway-green text-[10px] uppercase tracking-wider bg-pathway-green/10 px-1.5 py-0.5 rounded">Completed</span>}
-                                {t.status === 'scheduled' && <span className="ml-2 text-amber-porch text-[10px] uppercase tracking-wider bg-amber-porch/10 px-1.5 py-0.5 rounded">Upcoming</span>}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+            <h4 className="text-lg font-bold text-deep-forest mb-4 flex items-center gap-2"><MapPin className="w-4 h-4 text-amber-porch" /> Service Timeline</h4>
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-deep-forest/5 relative">
+               {timelineItems.length === 0 ? (
+                 <p className="text-sm text-deep-forest/50 text-center py-8">No history found.</p>
+               ) : (
+                 <div className="relative border-l-2 border-deep-forest/10 ml-4 py-2 flex flex-col gap-6">
+                   {timelineItems.map((item, i) => {
+                     const Icon = item.icon;
+                     return (
+                       <div key={i} className="relative pl-6">
+                         <div className={`absolute -left-[13px] top-0 w-6 h-6 rounded-full border-2 border-white flex items-center justify-center text-white ${item.color} shadow-sm`}>
+                           <Icon className="w-3 h-3" />
+                         </div>
+                         <div className="bg-linen-white/50 p-3 rounded-lg border border-deep-forest/5">
+                           <p className="text-[10px] font-bold uppercase tracking-wider text-deep-forest/50 mb-1">{new Date(item.date).toLocaleDateString()}</p>
+                           <h5 className="font-bold text-deep-forest text-sm">{item.title}</h5>
+                           <p className="text-xs text-deep-forest/70 mt-1">{item.desc}</p>
+                         </div>
+                       </div>
+                     );
+                   })}
+                 </div>
+               )}
             </div>
           </div>
         </div>
@@ -934,42 +993,56 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
     const inactiveZones = territoryZones.filter(z => !z.is_active);
 
     if (selectedZone) {
+      try {
       const zoneProps = properties.filter(p => p.territory_zone_id === selectedZone.id);
-      
+
       return (
         <div className="bg-white rounded-2xl shadow-xl border border-deep-forest/5 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
-          <div className="p-6 border-b border-deep-forest/10 flex items-center gap-4 bg-deep-forest text-white" style={{ borderBottomColor: selectedZone.color, borderBottomWidth: 4 }}>
-            <button onClick={() => setSelectedZone(null)} className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors">
-              <X className="w-4 h-4" />
-            </button>
-            <div className="flex-1">
-              <h3 className="text-2xl font-bold flex items-center gap-2">
-                <MapPin className="w-5 h-5" style={{ color: selectedZone.color }} />
-                {selectedZone.name}
-              </h3>
-              <p className="text-white/60 text-sm">{zoneProps.length} Properties in this zone</p>
+          <div className="p-6 border-b border-deep-forest/10 flex items-center justify-between gap-4 bg-deep-forest text-white" style={{ borderBottomColor: selectedZone.color || '#1D3B34', borderBottomWidth: 4 }}>
+            <div className="flex items-center gap-4">
+              <button onClick={() => setSelectedZone(null)} className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+              <div>
+                <h3 className="text-2xl font-bold flex items-center gap-2">
+                  <MapPin className="w-5 h-5" style={{ color: selectedZone.color || '#4ade80' }} />
+                  {selectedZone.name}
+                </h3>
+                <p className="text-white/60 text-sm">{zoneProps.length} Properties in this zone</p>
+              </div>
             </div>
+            <Button
+              onClick={() => generateMonthlyTickets(selectedZone.id)}
+              className="bg-pathway-green text-white hover:brightness-110 font-bold shrink-0 text-xs px-4"
+            >
+              <Calendar className="w-4 h-4 mr-2" /> Schedule Zone
+            </Button>
           </div>
-          
+
           <div className="divide-y divide-deep-forest/5">
             {zoneProps.length === 0 ? (
               <div className="p-8 text-center text-deep-forest/50">No properties in this zone yet.</div>
             ) : (
               zoneProps.map(p => {
                 const agreement = serviceAgreements.find(a => a.property_id === p.id);
-                const customer = customers.find(c => c.id === agreement?.customer_id);
-                const tickets = serviceTickets.filter(t => t.agreement_id === agreement?.id);
+                const customer = customers.find(c => c.id === (agreement?.customer_id || p.customer_id));
+                const tickets = agreement ? serviceTickets.filter(t => t.agreement_id === agreement.id) : [];
                 return (
                   <div key={p.id} className="p-6 hover:bg-linen-white/30 transition-colors">
                     <div className="flex justify-between items-start mb-3">
                       <div>
-                        <p className="font-bold text-deep-forest text-lg">{p.address}</p>
+                        <p className="font-bold text-deep-forest text-lg">{p.address || 'Unknown Address'}</p>
                         <p className="text-sm text-deep-forest/60">Customer: <span className="font-medium text-deep-forest">{customer?.full_name || 'Unknown'}</span></p>
                       </div>
                       {agreement && (
                         <div className="text-right">
                           <span className="text-[10px] uppercase font-bold text-deep-forest/40 tracking-wider block">Agreement Value</span>
-                          <span className="font-bold text-pathway-green text-lg">${agreement.recurring_price} <span className="text-xs font-normal text-deep-forest/50 capitalize">/ {agreement.frequency.replace('-', ' ')}</span></span>
+                          <span className="font-bold text-pathway-green text-lg">
+                            ${agreement.recurring_price || 0}
+                            <span className="text-xs font-normal text-deep-forest/50 capitalize">
+                              {' '}/ {(agreement.frequency || 'monthly').replace('-', ' ')}
+                            </span>
+                          </span>
                         </div>
                       )}
                     </div>
@@ -978,20 +1051,32 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
                         <div className="flex flex-wrap gap-2">
                           {tickets.slice(0, 3).map((t, i) => (
                             <span key={i} className="text-[10px] font-bold uppercase tracking-wider bg-deep-forest/5 text-deep-forest/70 px-2 py-1 rounded">
-                              {t.type} {t.status}
+                              {t.type || 'service'} · {t.status || 'pending'}
                             </span>
                           ))}
                         </div>
                       ) : <div />}
-                      
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleRemoveFromZone(p.id)}
-                        className="h-7 text-red-500 hover:text-red-600 hover:bg-red-50 text-xs px-3"
-                      >
-                        Remove from Zone
-                      </Button>
+
+                      <div className="flex items-center gap-2">
+                        {agreement && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => generateMonthlyTickets(undefined, p.id)}
+                            className="h-7 border-deep-forest/10 text-deep-forest/60 hover:text-pathway-green text-xs px-3 font-bold"
+                          >
+                            Schedule Individual
+                          </Button>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleRemoveFromZone(p.id)}
+                          className="h-7 text-red-500 hover:text-red-600 hover:bg-red-50 text-xs px-3"
+                        >
+                          Remove
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 );
@@ -1000,6 +1085,16 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
           </div>
         </div>
       );
+      } catch (err: any) {
+        console.error('Territory render error:', err);
+        return (
+          <div className="p-8 bg-white rounded-2xl border border-red-200 text-center">
+            <p className="text-red-500 font-bold mb-2">Failed to render zone details</p>
+            <p className="text-xs text-deep-forest/50 mb-4">{err?.message || 'Unknown error'}</p>
+            <button onClick={() => setSelectedZone(null)} className="text-sm font-bold text-pathway-green underline">← Back to Zones</button>
+          </div>
+        );
+      }
     }
 
     return (
@@ -1012,7 +1107,11 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
               </h2>
               <p className="text-sm text-deep-forest/60 mt-1">Manage macro-zones for route optimization and D2D saturation.</p>
             </div>
-            <Button onClick={() => setZoneModalOpen(true)} className="bg-pathway-green text-white hover:brightness-110 font-bold px-6 py-2 rounded-xl flex items-center gap-2">
+            <Button onClick={() => {
+              setSelectedZone(null);
+              setZoneForm({ name: '', color: '#1D3B34', startDay: 1, endDay: 7 });
+              setZoneModalOpen(true);
+            }} className="bg-pathway-green text-white hover:brightness-110 font-bold px-6 py-2 rounded-xl flex items-center gap-2">
               + Create Zone
             </Button>
           </div>
@@ -1034,8 +1133,11 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="font-bold text-lg text-deep-forest">{zone.name}</h3>
                     <div className="flex items-center gap-3">
-                      <button onClick={() => handleToggleZone(zone.id, zone.is_active)} className="text-[10px] uppercase font-bold text-deep-forest/40 hover:text-red-500 transition-colors">
+                      <button onClick={() => handleToggleZone(zone.id, zone.is_active)} className="text-[10px] uppercase font-bold text-deep-forest/40 hover:text-amber-porch transition-colors">
                         Deactivate
+                      </button>
+                      <button onClick={() => handleDeleteZone(zone.id)} className="text-[10px] uppercase font-bold text-deep-forest/40 hover:text-red-500 transition-colors">
+                        Delete
                       </button>
                       <div className="w-4 h-4 rounded-full shadow-sm" style={{ backgroundColor: zone.color }}></div>
                     </div>
@@ -1047,8 +1149,30 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
                         <span className="text-[10px] uppercase font-bold text-deep-forest/40 tracking-wider">Density Index</span>
                         <span className="font-bold text-deep-forest">{zonePropertiesCount} Properties</span>
                       </div>
-                      <button onClick={() => setSelectedZone(zone)} className="text-xs font-bold text-pathway-green bg-pathway-green/10 px-3 py-1.5 rounded-lg hover:bg-pathway-green/20 transition-colors">
-                        View Zone
+                      <div className="flex flex-col text-right">
+                        <span className="text-[10px] uppercase font-bold text-deep-forest/40 tracking-wider">Service Days</span>
+                        <span className="font-bold text-deep-forest">{zone.service_block_start === zone.service_block_end ? `Day ${zone.service_block_start || 1}` : `Days ${zone.service_block_start || 1}-${zone.service_block_end || 7}`}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 mt-4">
+                      <button onClick={() => {
+                        setZoneModalOpen(false);
+                        setTimeout(() => setSelectedZone(zone), 50);
+                      }} className="text-xs font-bold text-deep-forest bg-deep-forest/5 px-3 py-1.5 rounded-lg hover:bg-deep-forest/10 transition-colors flex-1 text-center">
+                        View Properties
+                      </button>
+                      <button onClick={(e) => {
+                        e.stopPropagation();
+                        setZoneForm({ 
+                          name: zone.name, 
+                          color: zone.color || '#1D3B34',
+                          startDay: zone.service_block_start || 1,
+                          endDay: zone.service_block_end || 7
+                        });
+                        setSelectedZone(zone);
+                        setZoneModalOpen(true);
+                      }} className="text-xs font-bold text-pathway-green bg-pathway-green/10 px-3 py-1.5 rounded-lg hover:bg-pathway-green/20 transition-colors flex-1 text-center">
+                        Edit Zone
                       </button>
                     </div>
                   </div>
@@ -1060,9 +1184,14 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
               <div key={zone.id} className="bg-linen-white opacity-60 rounded-2xl border border-deep-forest/10 p-6 flex flex-col">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="font-bold text-lg text-deep-forest/60 line-through">{zone.name}</h3>
-                  <button onClick={() => handleToggleZone(zone.id, zone.is_active)} className="text-[10px] uppercase font-bold text-deep-forest/60 hover:text-pathway-green transition-colors">
-                    Reactivate
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <button onClick={() => handleToggleZone(zone.id, zone.is_active)} className="text-[10px] uppercase font-bold text-deep-forest/60 hover:text-pathway-green transition-colors">
+                      Reactivate
+                    </button>
+                    <button onClick={() => handleDeleteZone(zone.id)} className="text-[10px] uppercase font-bold text-deep-forest/60 hover:text-red-500 transition-colors">
+                      Delete
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -1105,13 +1234,36 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
                       />
                     ))}
                   </div>
+                  </div>
+                
+                <div className="flex gap-4">
+                  <div className="flex-1">
+                    <label className="text-[10px] uppercase font-bold text-deep-forest/60 tracking-wider mb-1.5 block">Start Day (1-31)</label>
+                    <Input 
+                      type="number"
+                      min={1} max={31}
+                      value={zoneForm.startDay}
+                      onChange={e => setZoneForm(prev => ({ ...prev, startDay: parseInt(e.target.value) || 1 }))}
+                      className="bg-white border-deep-forest/10"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <label className="text-[10px] uppercase font-bold text-deep-forest/60 tracking-wider mb-1.5 block">End Day (1-31)</label>
+                    <Input 
+                      type="number"
+                      min={1} max={31}
+                      value={zoneForm.endDay}
+                      onChange={e => setZoneForm(prev => ({ ...prev, endDay: parseInt(e.target.value) || 7 }))}
+                      className="bg-white border-deep-forest/10"
+                    />
+                  </div>
                 </div>
               </div>
 
               <div className="mt-8 flex gap-3">
-                <Button variant="outline" className="flex-1" onClick={() => setZoneModalOpen(false)}>Cancel</Button>
-                <Button className="flex-1 bg-pathway-green text-white hover:brightness-110" onClick={handleCreateZone}>
-                  Create Zone
+                <Button variant="outline" className="flex-1" onClick={() => { setZoneModalOpen(false); setSelectedZone(null); }}>Cancel</Button>
+                <Button className="flex-1 bg-pathway-green text-white hover:brightness-110 font-bold" onClick={handleSaveZone}>
+                  {selectedZone ? 'Save Changes' : 'Create Zone'}
                 </Button>
               </div>
             </div>
@@ -1121,12 +1273,100 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
     );
   };
 
+  const generateMonthlyTickets = async (zoneId?: string, propertyId?: string) => {
+    // Find all active agreements
+    let query = supabase.from('service_agreements').select(`
+      *,
+      customers ( full_name ),
+      properties ( address, lat, lng, territory_zone_id )
+    `).eq('status', 'active');
+
+    if (propertyId) query = query.eq('property_id', propertyId);
+
+    const { data: agreements, error: agreementsError } = await query;
+    if (agreementsError) {
+      console.error("Failed to fetch agreements:", agreementsError);
+      toast.error("Failed to fetch service agreements.");
+      return;
+    }
+    
+    if (!agreements || agreements.length === 0) {
+      if (propertyId) toast.error("No active service agreements found to schedule for this property.");
+      else if (zoneId) toast.error("No active service agreements found to schedule for this zone.");
+      else toast.error("No active service agreements found to schedule.");
+      return;
+    }
+
+    // If filtering by zoneId, we need to filter in memory because Supabase nested filtering can be tricky
+    // with outer joins, and we also need to get the zone details
+    const { data: zones } = await supabase.from('territory_zones').select('*');
+    
+    let filteredAgreements = agreements;
+    if (zoneId) {
+      filteredAgreements = agreements.filter((ag: any) => ag.properties?.territory_zone_id === zoneId);
+      if (filteredAgreements.length === 0) {
+        toast.error("No active service agreements found in this zone.");
+        return;
+      }
+    }
+
+    const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
+    
+    // Check existing tickets for this month
+    const { data: existingTickets } = await supabase.from('service_tickets').select('*')
+      .gte('scheduled_start', `${currentMonth}-01T00:00:00Z`)
+      .lte('scheduled_start', `${currentMonth}-31T23:59:59Z`);
+
+    let newTicketsCount = 0;
+
+    for (const ag of filteredAgreements) {
+      // If they already have a ticket this month, skip
+      const hasTicket = existingTickets?.find(t => t.agreement_id === ag.id);
+      if (hasTicket) continue;
+
+      // Determine the scheduled start date based on the territory service block
+      const propertyZoneId = ag.properties?.territory_zone_id;
+      const zone = zones?.find(z => z.id === propertyZoneId);
+      const blockStartDay = zone?.service_block_start || 1;
+      const ticketDate = new Date();
+      ticketDate.setDate(blockStartDay);
+      ticketDate.setHours(8, 0, 0, 0); // Default 8 AM drop
+
+      const { error: insertErr } = await supabase.from('service_tickets').insert([{
+        agreement_id: ag.id,
+        property_id: ag.property_id,
+        customer_id: ag.customer_id,
+        status: 'scheduled',
+        scheduled_start: ticketDate.toISOString(),
+        price: ag.recurring_price || 0,
+        notes: `Auto-generated monthly ticket for 1-year contract.`
+      }]);
+
+      if (insertErr) {
+        console.error("Insert Ticket Error:", insertErr);
+        toast.error(`Failed to generate ticket: ${insertErr.message}`);
+      } else {
+        newTicketsCount++;
+      }
+    }
+
+    if (newTicketsCount > 0) {
+      toast.success(`Generated ${newTicketsCount} monthly tickets!`);
+    } else {
+      toast.info("All selected service agreements already have tickets scheduled for this month.");
+    }
+
+    // Always refresh tickets in state to ensure UI is in sync
+    const ticketsRes = await supabase.from('service_tickets').select('*, customer:customers(full_name), property:properties(address, lat, lng), agreement:service_agreements(territory_zone_id)').order('created_at', { ascending: false });
+    if (ticketsRes.data) setServiceTickets(ticketsRes.data);
+  };
+
   const renderLeads = () => {
     const columns = [
-      { id: 'new', label: 'New Leads', color: 'bg-deep-forest/5', border: 'border-deep-forest/10' },
-      { id: 'not_home', label: 'Not Home', color: 'bg-amber-porch/5', border: 'border-amber-porch/20' },
+      { id: 'not_home', label: 'Not Home', color: 'bg-gray-100', border: 'border-gray-200' },
       { id: 'not_interested', label: 'Not Interested', color: 'bg-red-50', border: 'border-red-200' },
       { id: 'interested', label: 'Interested', color: 'bg-blue-50', border: 'border-blue-200' },
+      { id: 'contract', label: 'Ready for Contract', color: 'bg-amber-porch/10', border: 'border-amber-porch/30' },
     ];
 
     const handleDrop = async (e: React.DragEvent, newStatus: string) => {
@@ -1137,8 +1377,9 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
       setLeads(leads.map(l => l.id === leadId ? { ...l, status: newStatus } : l));
       const { error } = await supabase.from('d2d_leads').update({ status: newStatus }).eq('id', leadId);
       if (error) toast.error('Failed to update status');
-      else toast.success(`Moved to ${newStatus.replace('_', ' ')}`);
+      else toast.success(newStatus === 'contract' ? 'Lead moved to Contracts Pipeline!' : `Moved to ${newStatus.replace('_', ' ')}`);
     };
+
 
     return (
       <div className="bg-white rounded-2xl shadow-xl border border-deep-forest/5 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500 flex flex-col h-full">
@@ -1246,7 +1487,9 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
         ) : (
           <div className="flex-1 flex gap-4 overflow-x-auto p-6 items-stretch min-h-[600px] bg-linen-white/20">
             {columns.map(col => {
-              const colLeads = leads.filter(l => l.status === col.id);
+              // Only show leads in the 'contract' column if we want them to linger, but user wants them removed.
+              // We'll filter them out completely so they vanish into the Contracts Pipeline tab.
+              const colLeads = col.id === 'contract' ? [] : leads.filter(l => l.status === col.id);
               return (
                 <div 
                   key={col.id} 
@@ -1314,6 +1557,8 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
             })}
           </div>
         )}
+
+
       </div>
     );
   };
@@ -1446,226 +1691,127 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
     }
   };
 
+  const handleUpdateSchedule = async (jobId: string, type: 'lead', techId: string | null, start: string | null, end: string | null) => {
+    const updates: any = {};
+    if (techId !== undefined) updates.assigned_tech_id = techId;
+    if (start !== undefined) updates.scheduled_start = start;
+    if (end !== undefined) updates.scheduled_end = end;
+
+    const { error } = await supabase.from('service_tickets').update(updates).eq('id', jobId);
+    if (!error) {
+      setServiceTickets(serviceTickets.map(t => t.id === jobId ? { ...t, ...updates } : t));
+      if (start) toast.success('Dispatched to Tech!');
+      else toast.success('Moved to Unassigned Pool');
+    } else {
+      toast.error('Failed to dispatch job');
+    }
+  };
+
+  const handleQuickBook = async (jobData: any) => {
+    const { data, error } = await supabase.from('d2d_leads').insert([{
+      ...jobData,
+      status: 'scheduled',
+      stage: 'closed_won',
+      territory_zone_id: jobData.zoneId || territoryZones[0]?.id
+    }]).select();
+
+    if (!error && data) {
+      setLeads([...leads, ...data]);
+      toast.success('Job created and scheduled!');
+    } else {
+      toast.error('Failed to quick book job');
+    }
+  };
+  const handleCancelJob = async (jobId: string) => {
+    // Delete the ticket from the database entirely
+    const { error } = await supabase.from('service_tickets').delete().eq('id', jobId);
+    
+    if (!error) {
+      setServiceTickets(serviceTickets.filter(t => t.id !== jobId));
+      toast.success('Ticket canceled and removed!');
+    } else {
+      toast.error('Failed to cancel ticket');
+    }
+  };
+
+  const submitConversion = async () => {
+    if (!conversionModal || !conversionForm.zoneId) return;
+    
+    const leadId = conversionModal;
+    const lead = leads.find(l => l.id === leadId);
+    if (!lead) return;
+
+    const updates = { 
+      status: 'closed_won',
+      stage: 'closed_won',
+      territory_zone_id: conversionForm.zoneId
+    };
+    setLeads(leads.map(l => l.id === leadId ? { ...l, ...updates } : l));
+    await supabase.from('d2d_leads').update(updates).eq('id', leadId);
+    
+    const { data: customerData, error: custErr } = await supabase.from('customers').insert([{
+      full_name: lead.contact_name || 'Resident',
+      email: `customer_${leadId.substring(0, 8)}@example.com`,
+      phone: lead.contact_phone || '0000000000'
+    }]).select().single();
+    
+    if (custErr || !customerData) return toast.error('Failed to create customer record');
+
+    const { data: propertyData, error: propErr } = await supabase.from('properties').insert([{
+      customer_id: customerData.id,
+      address: lead.address,
+      lat: lead.lat,
+      lng: lead.lng,
+      territory_zone_id: conversionForm.zoneId
+    }]).select().single();
+
+    if (propErr || !propertyData) return toast.error('Failed to create property record');
+
+    const startDate = new Date();
+    const endDate = new Date();
+    endDate.setFullYear(endDate.getFullYear() + 1);
+
+    const { data: agreementData, error: agErr } = await supabase.from('service_agreements').insert([{
+      property_id: propertyData.id,
+      customer_id: customerData.id,
+      originated_by_rep_id: lead.rep_id,
+      territory_zone_id: conversionForm.zoneId,
+      recurring_price: parseFloat(conversionForm.price),
+      frequency: conversionForm.frequency,
+      contract_start_date: startDate.toISOString().split('T')[0],
+      contract_end_date: endDate.toISOString().split('T')[0],
+      status: 'active'
+    }]).select().single();
+
+    if (agErr || !agreementData) return toast.error('Failed to create 1-year contract');
+    
+    toast.success('Contract Signed! Generating first ticket...');
+    await generateMonthlyTickets();
+    
+    setConversionModal(null);
+    setConversionForm({ zoneId: '', price: '99.00', frequency: 'monthly' });
+  };
+
   const renderScheduling = () => {
-    const today = new Date();
-    const year = calendarDate.getFullYear();
-    const month = calendarDate.getMonth();
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-    const firstDayOfWeek = new Date(year, month, 1).getDay();
-
-    const getEnrichedTickets = () => {
-      return serviceTickets.map(ticket => {
-        const agreement = serviceAgreements.find(a => a.id === ticket.agreement_id);
-        const property = properties.find(p => p.id === agreement?.property_id);
-        const customer = customers.find(c => c.id === agreement?.customer_id);
-        const zone = territoryZones.find(z => z.id === property?.territory_zone_id);
-        return { ...ticket, agreement, property, customer, zone };
-      });
-    };
-
-    const enrichedTickets = getEnrichedTickets();
-
-    const getEventsForDay = (day: number) => {
-      const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-      const dayTickets = enrichedTickets.filter(t => t.status !== 'cancelled' && t.status !== 'skipped' && (t.scheduled_start || '').startsWith(dateStr));
-      const dayTouchpoints = touchpoints.filter(t => (t.scheduled_for || '').startsWith(dateStr));
-      return { dayTickets, dayTouchpoints };
-    };
-
-    const isToday = (d: number) => d === today.getDate() && month === today.getMonth() && year === today.getFullYear();
-    const selectedEvents = selectedCalDay !== null ? getEventsForDay(selectedCalDay) : null;
-
-    // Group selected tickets by zone for the side panel
-    const groupedTickets = selectedEvents?.dayTickets.reduce((acc, t) => {
-      const zoneName = t.zone?.name || 'Unassigned Zone';
-      if (!acc[zoneName]) acc[zoneName] = [];
-      acc[zoneName].push(t);
-      return acc;
-    }, {} as Record<string, typeof enrichedTickets>);
+    // Map service tickets to the shape SmartDispatchCenter and DispatchMap expect
+    const mappedTickets = serviceTickets.map(t => ({
+      ...t,
+      contact_name: t.customer?.full_name || 'Customer',
+      address: t.property?.address || 'No Address',
+      lat: t.property?.lat,
+      lng: t.property?.lng,
+      territory_zone_id: t.agreement?.territory_zone_id || t.property?.territory_zone_id
+    }));
 
     return (
-      <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-
-        {/* ── Month Calendar ── */}
-        <div className="bg-white rounded-2xl shadow-xl border border-deep-forest/5 overflow-hidden">
-          <div className="p-6 border-b border-deep-forest/10 flex items-center justify-between">
-            <h3 className="text-xl font-bold text-deep-forest flex items-center gap-2">
-              <CalendarIcon className="w-5 h-5 text-amber-porch" /> Route Dispatch Board
-            </h3>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => { setCalendarDate(new Date(year, month - 1, 1)); setSelectedCalDay(null); }}
-                className="w-9 h-9 rounded-xl bg-deep-forest/5 hover:bg-deep-forest/10 text-deep-forest flex items-center justify-center transition-all"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <span className="font-bold text-deep-forest min-w-[150px] text-center text-sm">{format(calendarDate, 'MMMM yyyy')}</span>
-              <button
-                onClick={() => { setCalendarDate(new Date(year, month + 1, 1)); setSelectedCalDay(null); }}
-                className="w-9 h-9 rounded-xl bg-deep-forest/5 hover:bg-deep-forest/10 text-deep-forest flex items-center justify-center transition-all"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-
-          <div className="p-6">
-            <div className="grid grid-cols-7 gap-1 mb-2">
-              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
-                <div key={d} className="text-center text-[10px] font-bold text-deep-forest/30 uppercase tracking-wider py-2">{d}</div>
-              ))}
-            </div>
-            <div className="grid grid-cols-7 gap-1">
-              {Array.from({ length: firstDayOfWeek }).map((_, i) => <div key={`e${i}`} />)}
-              {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(day => {
-                const { dayTickets, dayTouchpoints } = getEventsForDay(day);
-                const hasEvents = dayTickets.length > 0 || dayTouchpoints.length > 0;
-                const isSelected = selectedCalDay === day;
-                const isTodayDay = isToday(day);
-                return (
-                  <button
-                    key={day}
-                    onClick={() => setSelectedCalDay(isSelected ? null : day)}
-                    className={[
-                      'flex flex-col items-center justify-start gap-1 p-2 rounded-xl min-h-[56px] text-sm font-bold transition-all',
-                      isSelected ? 'bg-pathway-green text-white shadow-lg shadow-pathway-green/30' : '',
-                      !isSelected && isTodayDay ? 'bg-amber-porch/15 text-amber-porch ring-2 ring-amber-porch/40' : '',
-                      !isSelected && !isTodayDay ? 'hover:bg-linen-white text-deep-forest' : '',
-                    ].join(' ')}
-                  >
-                    <span>{day}</span>
-                    {hasEvents && (
-                      <div className="flex gap-0.5 flex-wrap justify-center">
-                        {dayTickets.map((t, idx) => <div key={`t${idx}`} className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-white' : ''}`} style={{ backgroundColor: isSelected ? 'white' : (t.zone?.color || '#1D3B34') }} />)}
-                        {dayTouchpoints.map((_, idx) => <div key={`tp${idx}`} className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-white/70' : 'bg-amber-porch'}`} />)}
-                      </div>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-            <div className="flex items-center gap-6 mt-5 pt-4 border-t border-deep-forest/5 flex-wrap">
-              <span className="text-xs font-semibold text-deep-forest/60 mr-2">Zones:</span>
-              {territoryZones.filter(z => z.is_active).map(z => (
-                <div key={z.id} className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: z.color }} /><span className="text-xs font-semibold text-deep-forest/60">{z.name}</span></div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* ── Selected Day Panel (Zone Grouped) ── */}
-        {selectedCalDay !== null && selectedEvents && (
-          <div className="bg-white rounded-2xl shadow-xl border border-deep-forest/5 p-6 animate-in slide-in-from-top-2 duration-300">
-            <div className="flex items-center justify-between mb-5">
-              <h4 className="font-bold text-deep-forest flex items-center gap-2 text-lg">
-                <Clock className="w-4 h-4 text-amber-porch" />
-                {format(new Date(year, month, selectedCalDay), 'EEEE, MMMM d')}
-                <span className="text-sm font-normal text-deep-forest/40 ml-1">— {selectedEvents.dayTickets.length} job(s)</span>
-              </h4>
-              <button onClick={() => setSelectedCalDay(null)} className="w-8 h-8 rounded-lg bg-deep-forest/5 hover:bg-deep-forest/10 text-deep-forest/60 flex items-center justify-center transition-all">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            {selectedEvents.dayTickets.length === 0 && selectedEvents.dayTouchpoints.length === 0 && (
-              <p className="text-sm text-deep-forest/50 italic">No events on this day. Schedule jobs via the Acquisition tab.</p>
-            )}
-            <div className="flex flex-col gap-6">
-              {Object.entries(groupedTickets || {}).map(([zoneName, tickets]: [string, any]) => {
-                const zoneColor = tickets[0]?.zone?.color || '#1D3B34';
-                return (
-                  <div key={zoneName} className="space-y-3">
-                    <h5 className="text-[10px] uppercase font-bold tracking-wider flex items-center gap-2" style={{ color: zoneColor }}>
-                      <Map className="w-3 h-3" /> {zoneName} ({tickets.length} jobs)
-                    </h5>
-                    {tickets.map(t => (
-                      <div key={t.id} className="flex flex-col gap-3 p-4 bg-white border rounded-xl shadow-sm hover:shadow-md transition-all" style={{ borderColor: `${zoneColor}20` }}>
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="font-bold text-sm text-deep-forest">{t.customer?.full_name || 'Unknown'}</p>
-                            <p className="text-xs text-deep-forest/60 mt-0.5">{t.property?.address || 'No address'}</p>
-                            <div className="flex items-center gap-3 mt-1.5">
-                              {t.scheduled_start && (
-                                <p className="text-xs font-bold flex items-center gap-1" style={{ color: zoneColor }}>
-                                  <CalendarIcon className="w-3 h-3" />
-                                  {new Date(t.scheduled_start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                  {t.scheduled_end && ` – ${new Date(t.scheduled_end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
-                                </p>
-                              )}
-                              <span className="text-[9px] uppercase font-bold bg-deep-forest/5 text-deep-forest/50 px-1.5 py-0.5 rounded">{t.type}</span>
-                            </div>
-                          </div>
-                          
-                          <div className="flex flex-col items-end gap-2">
-                            <button
-                              onClick={() => handleToggleTimeLock(t.id, t.is_time_locked)}
-                              className={`flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded transition-colors ${t.is_time_locked ? 'bg-amber-porch text-white' : 'bg-linen-white text-deep-forest/40 hover:text-deep-forest hover:bg-deep-forest/5'}`}
-                            >
-                              <Clock className="w-3 h-3" /> {t.is_time_locked ? 'Time Locked' : 'Lock Time'}
-                            </button>
-                            <button
-                              onClick={() => handleCancelTicket(t.id)}
-                              className="text-[10px] font-bold uppercase tracking-wider text-red-500 hover:text-red-700 transition-colors"
-                            >
-                              Cancel Ticket
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Force Override Controls */}
-                        <div className="pt-3 mt-1 border-t border-deep-forest/5 flex items-center justify-between gap-3 bg-linen-white/30 -mx-4 -mb-4 p-4 rounded-b-xl">
-                          <div className="flex items-center gap-2 flex-1">
-                            <span className="text-[10px] uppercase font-bold tracking-wider text-deep-forest/50 shrink-0">Assigned Tech:</span>
-                            <select
-                              value={t.assigned_tech_id || ''}
-                              onChange={(e) => handleOverrideTech(t.id, e.target.value)}
-                              className="w-full text-xs font-bold text-deep-forest bg-white border border-deep-forest/10 rounded-md px-2 py-1 focus:outline-none focus:border-amber-porch"
-                            >
-                              <option value="">Unassigned</option>
-                              {profiles.filter(p => p.role === 'technician' || p.role === 'admin' || p.role === 'owner').map(p => (
-                                <option key={p.id} value={p.id}>{p.full_name}</option>
-                              ))}
-                            </select>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                );
-              })}
-              
-              {/* Keeping CRM touchpoints distinct at the bottom */}
-              {selectedEvents.dayTouchpoints.length > 0 && (
-                <div className="space-y-3 mt-4 pt-4 border-t border-deep-forest/5">
-                   <h5 className="text-[10px] uppercase font-bold tracking-wider text-deep-forest/50 flex items-center gap-2">
-                    CRM Touchpoints
-                  </h5>
-                  {selectedEvents.dayTouchpoints.map(t => (
-                    <div key={t.id} className="flex items-center justify-between p-4 bg-amber-porch/5 border border-amber-porch/20 rounded-xl">
-                      <div>
-                        <p className="font-bold text-sm text-deep-forest">{t.client_name}</p>
-                        <p className="text-xs text-deep-forest/60 mt-0.5 capitalize">{(t.campaign_type || 'nurture').replace(/_/g, ' ')} touchpoint</p>
-                      </div>
-                      <span className={`text-xs font-bold px-3 py-1.5 rounded-lg ${t.status === 'sent' ? 'bg-pathway-green/10 text-pathway-green' : 'bg-amber-porch/10 text-amber-porch'}`}>{t.status}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ── Route Map ── */}
-        <div className="bg-white rounded-2xl shadow-xl border border-deep-forest/5 overflow-hidden">
-          <div className="p-5 border-b border-deep-forest/10">
-            <h4 className="font-bold text-deep-forest flex items-center gap-2">
-              <MapPin className="w-4 h-4 text-amber-porch" /> Route-Based Dispatch Map
-            </h4>
-          </div>
-          <div className="p-4">
-            <DispatchMap leads={leads} profiles={profiles} onAssignTech={handleAssignTech} onScheduleTime={handleScheduleTime} />
-          </div>
-        </div>
-      </div>
+      <SmartDispatchCenter 
+        leads={mappedTickets}
+        profiles={profiles}
+        territoryZones={territoryZones}
+        onUpdateSchedule={handleUpdateSchedule}
+        onCreateJob={handleQuickBook}
+        onCancelJob={handleCancelJob}
+      />
     );
   };
 
@@ -1691,10 +1837,10 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
                 <h4 className="font-bold text-deep-forest">Scheduled Cadence Touchpoints</h4>
                 <Button onClick={async () => {
                   for (const t of pendingTouchpoints) {
-                    await supabase.from('client_touchpoints').update({ status: 'sent', sent_at: new Date().toISOString() }).eq('id', t.id);
+                    await supabase.from('client_touchpoints').update({ status: 'sent' }).eq('id', t.id);
                   }
                   toast.success(`Executed ${pendingTouchpoints.length} Nurture Actions!`);
-                  setTouchpoints(touchpoints.map(t => pendingTouchpoints.find(p => p.id === t.id) ? { ...t, status: 'sent', sent_at: new Date().toISOString() } : t));
+                  setTouchpoints(touchpoints.map(t => pendingTouchpoints.find(p => p.id === t.id) ? { ...t, status: 'sent' } : t));
                 }} disabled={pendingTouchpoints.length === 0} className="bg-amber-porch text-white hover:brightness-110 gap-2">
                   <Send className="w-4 h-4" /> Execute All Touchpoints
                 </Button>
@@ -1718,9 +1864,9 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
                           </span>
                           <button 
                             onClick={async () => {
-                              await supabase.from('client_touchpoints').update({ status: 'sent', sent_at: new Date().toISOString() }).eq('id', t.id);
+                              await supabase.from('client_touchpoints').update({ status: 'sent' }).eq('id', t.id);
                               toast.success('Touchpoint executed');
-                              setTouchpoints(touchpoints.map(tp => tp.id === t.id ? { ...tp, status: 'sent', sent_at: new Date().toISOString() } : tp));
+                              setTouchpoints(touchpoints.map(tp => tp.id === t.id ? { ...tp, status: 'sent' } : tp));
                             }}
                             className="w-8 h-8 rounded bg-pathway-green text-white hover:brightness-110 flex items-center justify-center transition-all"
                             title="Execute Touchpoint"
@@ -1840,123 +1986,218 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
     }
   };
 
-  const renderTeam = () => (
-    <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+  const renderTeam = () => {
+    // Sales Leaderboard
+    const repPerformance = profiles.filter(p => p.role === 'rep' || p.role === 'admin').map(rep => {
+      const repLeads = leads.filter(l => l.rep_name === rep.full_name && l.stage === 'closed_won');
+      const mrr = repLeads.length * 159; // Simulated MRR 
+      return { id: rep.id, name: rep.full_name, mrr, deals: repLeads.length };
+    }).sort((a,b) => b.mrr - a.mrr).slice(0, 5);
 
-      {/* ── Invite Card ── */}
-      <div className="bg-white rounded-2xl shadow-xl border border-deep-forest/5 p-6">
-        <div className="flex items-center gap-3 mb-5">
-          <div className="w-10 h-10 rounded-xl bg-pathway-green/10 flex items-center justify-center">
-            <Send className="w-5 h-5 text-pathway-green" />
-          </div>
+    // Tech Efficiency Score
+    const techStats = profiles.filter(p => p.role === 'technician' || p.role === 'admin').map(tech => {
+      const techInspections = inspections.filter(i => i.technician_id === tech.id);
+      const avgDuration = techInspections.length ? techInspections.reduce((acc, i) => acc + (i.duration_seconds || 0), 0) / techInspections.length : 0;
+      let score = 98;
+      if (avgDuration > 2400) score -= Math.min(40, (avgDuration - 2400) / 60);
+      return { id: tech.id, name: tech.full_name, total: techInspections.length, avgDuration: Math.round(avgDuration / 60), score: Math.round(score) };
+    }).sort((a, b) => b.score - a.score).slice(0, 5);
+
+    return (
+      <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <div className="flex justify-between items-center">
           <div>
-            <h3 className="text-lg font-bold text-deep-forest leading-none">Invite Team Member</h3>
-            <p className="text-xs text-deep-forest/50 mt-0.5">They'll receive an email to set their password and log in.</p>
+            <h2 className="text-2xl font-bold text-deep-forest flex items-center gap-2">
+              <Users className="w-6 h-6 text-pathway-green" /> Team Performance & Roster
+            </h2>
+            <p className="text-sm text-deep-forest/60 mt-1">Manage users and track performance metrics.</p>
           </div>
         </div>
-        <form onSubmit={handleInvite} className="flex flex-col sm:flex-row gap-3">
-          <div className="relative flex-1">
-            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-deep-forest/30 pointer-events-none" />
-            <input
-              type="email"
-              required
-              placeholder="teammate@example.com"
-              value={inviteEmail}
-              onChange={e => setInviteEmail(e.target.value)}
-              className="w-full pl-10 pr-4 py-3 rounded-xl border border-deep-forest/10 text-deep-forest text-sm focus:outline-none focus:border-pathway-green focus:ring-2 focus:ring-pathway-green/20 transition-all bg-linen-white/50"
-            />
-          </div>
-          <div className="relative">
-            <select
-              value={inviteRole}
-              onChange={e => setInviteRole(e.target.value as any)}
-              className="h-full pl-4 pr-10 py-3 appearance-none rounded-xl border border-deep-forest/10 text-deep-forest text-sm font-bold focus:outline-none focus:border-pathway-green focus:ring-2 focus:ring-pathway-green/20 transition-all bg-linen-white/50"
-            >
-              <option value="technician">Technician</option>
-              <option value="rep">Sales Rep</option>
-              <option value="admin">Admin</option>
-            </select>
-            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-deep-forest/40 pointer-events-none" />
-          </div>
-          <button
-            type="submit"
-            disabled={inviteLoading}
-            className="flex items-center justify-center gap-2 px-6 py-3 bg-pathway-green text-white rounded-xl font-bold text-sm hover:brightness-110 transition-all shadow-md shadow-pathway-green/20 disabled:opacity-50 shrink-0"
-          >
-            {inviteLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-            Send Invite
-          </button>
-        </form>
-      </div>
 
-      {/* ── Team Members List ── */}
-      <div className="bg-white rounded-2xl shadow-xl border border-deep-forest/5 overflow-hidden">
-        <div className="p-6 border-b border-deep-forest/10">
-          <h3 className="text-xl font-bold text-deep-forest flex items-center gap-2">
-            <Users className="w-5 h-5 text-deep-forest" /> Team Members
-            <span className="ml-2 bg-deep-forest/5 text-deep-forest px-3 py-1 rounded-full text-xs font-bold uppercase">{profiles.length} Total</span>
-          </h3>
+        {/* Gamification Dashboard */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          
+          {/* Sales Leaderboard */}
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-deep-forest/10 relative overflow-hidden">
+             <h3 className="text-lg font-bold text-deep-forest mb-6 flex items-center gap-2">
+               <span className="w-6 h-6 rounded-md bg-amber-porch text-white flex items-center justify-center"><Users className="w-3 h-3" /></span>
+               Sales Rep Leaderboard
+             </h3>
+             <div className="flex flex-col gap-3">
+               {repPerformance.length === 0 ? <p className="text-deep-forest/50 text-sm font-medium">No sales data yet.</p> : repPerformance.map((rep, idx) => (
+                 <div key={rep.id} className="bg-linen-white rounded-xl p-3 flex items-center justify-between border border-deep-forest/5">
+                   <div className="flex items-center gap-3">
+                     <span className={`w-6 h-6 rounded-md flex items-center justify-center font-bold text-xs ${idx === 0 ? 'bg-amber-porch text-white' : 'bg-gray-200 text-gray-700'}`}>
+                       #{idx + 1}
+                     </span>
+                     <div>
+                       <p className="font-bold text-deep-forest text-sm">{rep.name}</p>
+                       <p className="text-xs text-deep-forest/50">{rep.deals} Contracts Closed</p>
+                     </div>
+                   </div>
+                   <div className="text-right">
+                     <p className="font-bold text-lg text-pathway-green">${rep.mrr.toLocaleString()}</p>
+                     <p className="text-xs text-deep-forest/50">Added MRR</p>
+                   </div>
+                 </div>
+               ))}
+             </div>
+          </div>
+
+          {/* Tech Efficiency */}
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-deep-forest/10 relative overflow-hidden">
+             <h3 className="text-lg font-bold text-deep-forest mb-6 flex items-center gap-2">
+               <span className="w-6 h-6 rounded-md bg-pathway-green text-white flex items-center justify-center"><ClipboardList className="w-3 h-3" /></span>
+               Tech Efficiency Scores
+             </h3>
+             <div className="flex flex-col gap-3">
+               {techStats.length === 0 ? <p className="text-deep-forest/50 text-sm font-medium">No tech data yet.</p> : techStats.map((tech, idx) => (
+                 <div key={tech.id} className="bg-linen-white rounded-xl p-3 flex items-center justify-between border border-deep-forest/5">
+                   <div className="flex items-center gap-3">
+                     <span className="w-6 h-6 rounded-md bg-gray-200 text-gray-700 flex items-center justify-center font-bold text-xs">
+                       #{idx + 1}
+                     </span>
+                     <div>
+                       <p className="font-bold text-deep-forest text-sm">{tech.name}</p>
+                       <p className="text-xs text-deep-forest/50">{tech.total} Jobs Completed</p>
+                     </div>
+                   </div>
+                   <div className="text-right flex items-center gap-3">
+                     <div className="text-right">
+                       <p className="font-bold text-deep-forest text-sm">{tech.avgDuration}m</p>
+                       <p className="text-xs text-deep-forest/50">Avg Time</p>
+                     </div>
+                     <div className={`w-10 h-10 rounded-full flex flex-col items-center justify-center border-2 ${tech.score >= 90 ? 'border-pathway-green text-pathway-green' : tech.score >= 70 ? 'border-amber-porch text-amber-porch' : 'border-red-500 text-red-500'}`}>
+                       <span className="font-bold text-sm leading-none">{tech.score}</span>
+                     </div>
+                   </div>
+                 </div>
+               ))}
+             </div>
+          </div>
+
         </div>
-        <div className="divide-y divide-deep-forest/5">
-          {profiles.length === 0 && (
-            <div className="p-8 text-center text-deep-forest/50">No team members yet. Invite one above.</div>
-          )}
-          {profiles.map(profile => (
-            <div key={profile.id} className={`p-6 hover:bg-linen-white/30 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${profile.is_active === false ? 'opacity-50 grayscale' : ''}`}>
-              <div>
-                <div className="flex items-center gap-2">
-                  <p className="font-bold text-deep-forest text-lg">{profile.full_name || 'Unnamed Member'}</p>
-                  {profile.is_active === false && (
-                    <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-600 text-[10px] font-bold uppercase tracking-wider">Deactivated</span>
-                  )}
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-4">
+          
+          {/* ── Invite Card ── */}
+          <div className="lg:col-span-1 flex flex-col gap-4">
+            <div className="bg-white rounded-3xl shadow-xl border border-deep-forest/5 p-6 h-full flex flex-col justify-center">
+              <div className="flex flex-col mb-6">
+                <div className="w-12 h-12 rounded-2xl bg-pathway-green/10 flex items-center justify-center mb-4">
+                  <Send className="w-6 h-6 text-pathway-green" />
                 </div>
-                {profile.email && <p className="text-sm text-deep-forest/60 mt-0.5">{profile.email}</p>}
-                <p className="text-xs font-bold text-deep-forest/40 uppercase tracking-wide mt-1">Joined {new Date(profile.created_at).toLocaleDateString()}</p>
+                <h3 className="text-xl font-black text-deep-forest leading-none mb-2">Invite Teammate</h3>
+                <p className="text-sm text-deep-forest/60 font-medium">Send an email invite to bring a new tech or rep onto the platform.</p>
               </div>
-              <div className="flex items-center gap-3">
-                <select
-                  className="text-sm p-2 border border-deep-forest/20 rounded-lg bg-white font-bold text-deep-forest focus:outline-none disabled:opacity-50"
-                  value={profile.role}
-                  disabled={profile.is_active === false}
-                  onChange={async (e) => {
-                    const newRole = e.target.value;
-                    const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', profile.id);
-                    if (error) toast.error('Failed to update role');
-                    else {
-                      toast.success('Role updated successfully');
-                      setProfiles(profiles.map(p => p.id === profile.id ? { ...p, role: newRole } : p));
-                    }
-                  }}
+              <form onSubmit={handleInvite} className="flex flex-col gap-4">
+                <div className="relative">
+                  <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-deep-forest/40 pointer-events-none" />
+                  <input
+                    type="email"
+                    required
+                    placeholder="Email Address"
+                    value={inviteEmail}
+                    onChange={e => setInviteEmail(e.target.value)}
+                    className="w-full pl-11 pr-4 py-3.5 rounded-xl border border-deep-forest/10 text-deep-forest text-sm focus:outline-none focus:border-pathway-green focus:ring-2 focus:ring-pathway-green/20 transition-all bg-linen-white/50 font-bold"
+                  />
+                </div>
+                <div className="relative">
+                  <select
+                    value={inviteRole}
+                    onChange={e => setInviteRole(e.target.value as any)}
+                    className="w-full pl-4 pr-10 py-3.5 appearance-none rounded-xl border border-deep-forest/10 text-deep-forest text-sm font-bold focus:outline-none focus:border-pathway-green focus:ring-2 focus:ring-pathway-green/20 transition-all bg-linen-white/50"
+                  >
+                    <option value="technician">Technician</option>
+                    <option value="rep">Sales Rep</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                  <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-deep-forest/40 pointer-events-none" />
+                </div>
+                <button
+                  type="submit"
+                  disabled={inviteLoading}
+                  className="w-full flex items-center justify-center gap-2 py-3.5 bg-deep-forest text-white rounded-xl font-bold text-sm hover:brightness-125 transition-all shadow-md disabled:opacity-50 mt-2"
                 >
-                  <option value="technician">Technician</option>
-                  <option value="rep">Sales Rep</option>
-                  <option value="admin">Admin</option>
-                </select>
-                
-                <Button 
-                  variant={profile.is_active === false ? "outline" : "ghost"}
-                  className={`text-sm font-bold ${profile.is_active === false ? 'text-pathway-green border-pathway-green' : 'text-red-500 hover:bg-red-50'}`}
-                  onClick={async () => {
-                    const newStatus = profile.is_active === false ? true : false;
-                    if (!newStatus && !confirm(`Are you sure you want to lock out ${profile.full_name}? They will instantly lose access.`)) return;
-                    
-                    const { error } = await supabase.from('profiles').update({ is_active: newStatus }).eq('id', profile.id);
-                    if (error) toast.error('Failed to update status');
-                    else {
-                      toast.success(newStatus ? 'Account Reactivated' : 'Account Deactivated');
-                      setProfiles(profiles.map(p => p.id === profile.id ? { ...p, is_active: newStatus } : p));
-                    }
-                  }}
-                >
-                  {profile.is_active === false ? 'Reactivate' : 'Deactivate'}
-                </Button>
+                  {inviteLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  Send Invite
+                </button>
+              </form>
+            </div>
+          </div>
+
+          {/* ── Team Members List ── */}
+          <div className="lg:col-span-2">
+            <div className="bg-white rounded-3xl shadow-xl border border-deep-forest/5 overflow-hidden h-full flex flex-col">
+              <div className="p-6 border-b border-deep-forest/10 flex items-center justify-between bg-linen-white/30">
+                <h3 className="text-lg font-black text-deep-forest flex items-center gap-2">
+                  <Users className="w-5 h-5 text-deep-forest" /> Active Roster
+                </h3>
+                <span className="bg-pathway-green/10 text-pathway-green px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest">{profiles.length} Total</span>
+              </div>
+              <div className="divide-y divide-deep-forest/5 overflow-y-auto max-h-[400px]">
+                {profiles.length === 0 && (
+                  <div className="p-10 text-center text-deep-forest/50 font-bold uppercase tracking-widest text-xs">No team members yet.</div>
+                )}
+                {profiles.map(profile => (
+                  <div key={profile.id} className={`p-5 hover:bg-linen-white/50 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${profile.is_active === false ? 'opacity-50 grayscale' : ''}`}>
+                    <div>
+                      <div className="flex items-center gap-3">
+                        <p className="font-black text-deep-forest text-base">{profile.full_name || 'Unnamed Member'}</p>
+                        {profile.is_active === false && (
+                          <span className="px-2 py-0.5 rounded bg-red-100 text-red-600 text-[10px] font-black uppercase tracking-widest">Locked Out</span>
+                        )}
+                      </div>
+                      {profile.email && <p className="text-xs font-bold text-deep-forest/50 mt-1">{profile.email}</p>}
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <select
+                        className="text-xs p-2 border border-deep-forest/10 rounded-lg bg-white font-black uppercase tracking-wider text-deep-forest focus:outline-none disabled:opacity-50 cursor-pointer hover:bg-linen-white transition-colors"
+                        value={profile.role}
+                        disabled={profile.is_active === false}
+                        onChange={async (e) => {
+                          const newRole = e.target.value;
+                          const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', profile.id);
+                          if (error) toast.error('Failed to update role');
+                          else {
+                            toast.success('Role updated');
+                            setProfiles(profiles.map(p => p.id === profile.id ? { ...p, role: newRole } : p));
+                          }
+                        }}
+                      >
+                        <option value="technician">Technician</option>
+                        <option value="rep">Sales Rep</option>
+                        <option value="admin">Admin</option>
+                      </select>
+                      
+                      <Button 
+                        variant={profile.is_active === false ? "outline" : "ghost"}
+                        size="sm"
+                        className={`text-xs font-black uppercase tracking-wider h-8 ${profile.is_active === false ? 'text-pathway-green border-pathway-green' : 'text-red-500 hover:bg-red-50'}`}
+                        onClick={async () => {
+                          const newStatus = profile.is_active === false ? true : false;
+                          if (!newStatus && !confirm(`Lock out ${profile.full_name}? They will lose access instantly.`)) return;
+                          
+                          const { error } = await supabase.from('profiles').update({ is_active: newStatus }).eq('id', profile.id);
+                          if (error) toast.error('Failed to update status');
+                          else {
+                            toast.success(newStatus ? 'Account Reactivated' : 'Account Deactivated');
+                            setProfiles(profiles.map(p => p.id === profile.id ? { ...p, is_active: newStatus } : p));
+                          }
+                        }}
+                      >
+                        {profile.is_active === false ? 'Reactivate' : 'Lock Out'}
+                      </Button>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
-          ))}
+          </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderSettings = () => (
     <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -1991,6 +2232,8 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
           ))}
         </div>
       </div>
+
+      <AutomationRules />
 
       <div className="bg-white rounded-2xl shadow-xl border border-deep-forest/5 p-6">
         <h3 className="text-xl font-bold text-deep-forest mb-1">Dynamic Checklists</h3>
@@ -2064,10 +2307,11 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
   const tabs = [
     { id: 'dashboard' as AdminTab, label: 'Overview', icon: LayoutDashboard },
     { id: 'clients' as AdminTab, label: 'Clients', icon: Users },
+    { id: 'subscriptions' as AdminTab, label: 'Contracts Pipeline', icon: FileText },
     { id: 'scheduling' as AdminTab, label: 'Scheduling', icon: CalendarIcon },
     { id: 'action_center' as AdminTab, label: 'Action Center', icon: Inbox },
     { id: 'inspections' as AdminTab, label: 'Inspections', icon: ClipboardList },
-    { id: 'leads' as AdminTab, label: 'Acquisition (D2D)', icon: MapPin },
+    { id: 'leads' as AdminTab, label: 'Acquisition', icon: MapPin },
     { id: 'territories' as AdminTab, label: 'Territories', icon: Map },
     { id: 'team' as AdminTab, label: 'Team', icon: Users },
     { id: 'payroll' as AdminTab, label: 'Time & Payroll', icon: Clock },
@@ -2078,6 +2322,123 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
     return (
       <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
         <TimesheetDashboard profiles={profiles} auditLogs={auditLogs} />
+      </div>
+    );
+  };
+
+  const renderContractsPipeline = () => {
+    const pendingContracts = leads.filter(l => l.status === 'contract');
+
+    return (
+      <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-black text-deep-forest tracking-tight flex items-center gap-2">
+              <FileText className="w-6 h-6 text-pathway-green" /> Contracts Pipeline
+            </h2>
+            <p className="text-sm text-deep-forest/60 mt-1">Manage pending signatures and active recurring service agreements.</p>
+          </div>
+          <Button onClick={generateMonthlyTickets} className="bg-pathway-green text-white hover:brightness-110 font-bold px-6 py-2 rounded-xl flex items-center gap-2">
+            <CalendarIcon className="w-4 h-4" /> Generate This Month's Tickets
+          </Button>
+        </div>
+
+        {/* ── Pending Contracts (Leads) ── */}
+        <div>
+          <h3 className="text-lg font-bold text-deep-forest mb-4">Pending Signatures ({pendingContracts.length})</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {pendingContracts.map(lead => (
+              <div key={lead.id} className="bg-amber-porch/5 border border-amber-porch/20 rounded-2xl p-6 relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-3">
+                  <span className="bg-amber-porch text-white text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-md">Pending</span>
+                </div>
+                <h4 className="font-bold text-lg text-deep-forest">{lead.contact_name || 'Resident'}</h4>
+                <p className="text-sm text-deep-forest/60 mt-1">{lead.address}</p>
+                <div className="mt-4 pt-4 border-t border-amber-porch/10 flex justify-end">
+                  <button
+                    onClick={() => {
+                      setConversionModal(lead.id);
+                      setConversionForm({ zoneId: '', price: '99.00', frequency: 'monthly' });
+                    }}
+                    className="bg-amber-porch hover:brightness-110 text-white font-bold py-2 px-4 rounded-xl text-sm flex items-center gap-2 shadow-sm transition-all"
+                  >
+                    <FileText className="w-4 h-4" /> Sign Contract
+                  </button>
+                </div>
+              </div>
+            ))}
+            {pendingContracts.length === 0 && (
+              <div className="col-span-full bg-white border border-dashed border-deep-forest/10 rounded-2xl p-8 text-center text-deep-forest/40 font-bold">
+                No pending contracts in the pipeline.
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── Active Contracts ── */}
+        <div>
+          <h3 className="text-lg font-bold text-deep-forest mb-4">Active Service Agreements</h3>
+          <div className="bg-white rounded-2xl shadow-sm border border-deep-forest/5 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-linen-white/50 text-deep-forest/60 text-xs uppercase font-black tracking-wider border-b border-deep-forest/10">
+                <tr>
+                  <th className="p-4">Customer</th>
+                  <th className="p-4">Property</th>
+                  <th className="p-4">Status</th>
+                  <th className="p-4">Monthly Value</th>
+                  <th className="p-4">Contract End Date</th>
+                  <th className="p-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-deep-forest/5">
+                {serviceAgreements.map(ag => {
+                  const cust = customers.find(c => c.id === ag.customer_id);
+                  const prop = properties.find(p => p.id === ag.property_id);
+                  return (
+                    <tr key={ag.id} className="hover:bg-linen-white/30 transition-colors">
+                      <td className="p-4 font-bold text-deep-forest">{cust?.full_name || 'Unknown'}</td>
+                      <td className="p-4 text-deep-forest/80">{prop?.address || 'Unknown'}</td>
+                      <td className="p-4">
+                        <span className="bg-pathway-green/10 text-pathway-green px-2 py-1 rounded text-[10px] font-black uppercase tracking-wider">
+                          {ag.status}
+                        </span>
+                      </td>
+                      <td className="p-4 font-bold text-deep-forest">${ag.recurring_price}/mo</td>
+                      <td className="p-4 text-deep-forest/60">{ag.contract_end_date ? new Date(ag.contract_end_date).toLocaleDateString() : 'N/A'}</td>
+                      <td className="p-4 text-right">
+                        <select
+                          className="text-xs p-1.5 border border-deep-forest/20 rounded-md bg-white font-bold text-deep-forest focus:outline-none cursor-pointer hover:bg-linen-white transition-colors"
+                          value={ag.status}
+                          onChange={async (e) => {
+                            const newStatus = e.target.value;
+                            if (newStatus === 'cancelled' && !confirm('Are you sure you want to cancel this contract? This will prevent future tickets from being generated.')) return;
+                            const { error } = await supabase.from('service_agreements').update({ status: newStatus }).eq('id', ag.id);
+                            if (error) toast.error('Failed to update contract status');
+                            else {
+                              toast.success(`Contract ${newStatus}`);
+                              setServiceAgreements(prev => prev.map(a => a.id === ag.id ? { ...a, status: newStatus } : a));
+                            }
+                          }}
+                        >
+                          <option value="active">Active</option>
+                          <option value="paused">Paused</option>
+                          <option value="cancelled">Cancelled</option>
+                        </select>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {serviceAgreements.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="p-8 text-center text-deep-forest/50 font-bold">No active contracts found.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        </div>
       </div>
     );
   };
@@ -2229,6 +2590,7 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
             {activeTab === 'action_center' && renderActionCenter()}
             {activeTab === 'inspections' && renderInspections()}
             {activeTab === 'leads' && renderLeads()}
+            {activeTab === 'subscriptions' && renderContractsPipeline()}
             {activeTab === 'territories' && renderTerritories()}
             {activeTab === 'team' && renderTeam()}
             {activeTab === 'payroll' && renderPayroll()}
@@ -2236,6 +2598,118 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
           </>
         )}
       </main>
+
+      {/* ── Client Modal ── */}
+      {clientModalOpen && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="absolute inset-0 bg-deep-forest/80 backdrop-blur-sm" onClick={() => setClientModalOpen(false)} />
+          <div className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl p-6 overflow-hidden border border-deep-forest/5 animate-in zoom-in-95 duration-300">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-xl font-bold text-deep-forest flex items-center gap-2">
+                <Users className="w-5 h-5 text-pathway-green" /> {(clientForm as any).id ? 'Edit Client' : 'Add Client'}
+              </h3>
+              <button onClick={() => setClientModalOpen(false)} className="w-8 h-8 rounded-full bg-deep-forest/5 hover:bg-deep-forest/10 flex items-center justify-center text-deep-forest/50 hover:text-deep-forest transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="text-[10px] uppercase font-bold text-deep-forest/60 tracking-wider mb-1.5 block">Full Name <span className="text-red-500">*</span></label>
+                <Input 
+                  placeholder="e.g. John Doe"
+                  value={clientForm.full_name}
+                  onChange={e => setClientForm(prev => ({ ...prev, full_name: e.target.value }))}
+                  className="bg-white border-deep-forest/10"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[10px] uppercase font-bold text-deep-forest/60 tracking-wider mb-1.5 block">Email</label>
+                  <Input 
+                    type="email"
+                    placeholder="e.g. john@example.com"
+                    value={clientForm.email}
+                    onChange={e => setClientForm(prev => ({ ...prev, email: e.target.value }))}
+                    className="bg-white border-deep-forest/10"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] uppercase font-bold text-deep-forest/60 tracking-wider mb-1.5 block">Phone</label>
+                  <Input 
+                    type="tel"
+                    placeholder="e.g. 555-0199"
+                    value={clientForm.phone}
+                    onChange={e => setClientForm(prev => ({ ...prev, phone: e.target.value }))}
+                    className="bg-white border-deep-forest/10"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] uppercase font-bold text-deep-forest/60 tracking-wider mb-1.5 block">Address <span className="text-red-500">*</span></label>
+                <Input 
+                  placeholder="e.g. 123 Main St, City, ST"
+                  value={clientForm.address}
+                  onChange={e => setClientForm(prev => ({ ...prev, address: e.target.value }))}
+                  className="bg-white border-deep-forest/10"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] uppercase font-bold text-deep-forest/60 tracking-wider mb-1.5 block">Territory Zone <span className="text-red-500">*</span></label>
+                <select 
+                  className="w-full text-sm p-3 border border-deep-forest/10 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-pathway-green/50"
+                  value={clientForm.zoneId}
+                  onChange={e => setClientForm(prev => ({ ...prev, zoneId: e.target.value }))}
+                >
+                  <option value="">Select a Route Zone...</option>
+                  {territoryZones.filter(z => z.is_active).map(zone => (
+                    <option key={zone.id} value={zone.id}>{zone.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[10px] uppercase font-bold text-deep-forest/60 tracking-wider mb-1.5 block">Recurring Price <span className="text-red-500">*</span></label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-deep-forest/50 font-bold">$</span>
+                    <Input 
+                      type="number"
+                      placeholder="150"
+                      value={clientForm.price}
+                      onChange={e => setClientForm(prev => ({ ...prev, price: e.target.value }))}
+                      className="bg-white border-deep-forest/10 pl-7"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-[10px] uppercase font-bold text-deep-forest/60 tracking-wider mb-1.5 block">Frequency <span className="text-red-500">*</span></label>
+                  <select 
+                    className="w-full text-sm p-3 border border-deep-forest/10 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-pathway-green/50"
+                    value={clientForm.frequency}
+                    onChange={e => setClientForm(prev => ({ ...prev, frequency: e.target.value }))}
+                  >
+                    <option value="monthly">Monthly</option>
+                    <option value="bi-monthly">Bi-Monthly</option>
+                    <option value="quarterly">Quarterly</option>
+                    <option value="annual">Annual</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-8 flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={() => setClientModalOpen(false)}>Cancel</Button>
+              <Button className="flex-1 bg-pathway-green text-white hover:brightness-110 font-bold" onClick={handleSaveClient}>
+                {(clientForm as any).id ? 'Save Changes' : 'Create Client'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Schedule Modal ── */}
       {scheduleModal && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 animate-in fade-in duration-200">
@@ -2371,10 +2845,10 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
                   <span className="text-[10px] uppercase font-bold text-deep-forest/50 tracking-wider mb-3 block">Pipeline Stage</span>
                   <div className="flex items-center gap-1">
                     {[
-                      { id: 'new', label: 'New' },
                       { id: 'not_home', label: 'Not Home' },
+                      { id: 'not_interested', label: 'Not Interested' },
                       { id: 'interested', label: 'Interested' },
-                      { id: 'scheduled', label: 'Scheduled' },
+                      { id: 'contract', label: 'Contract' },
                     ].map((stage, idx, arr) => {
                       const isActive = selectedLead.status === stage.id;
                       const isPast = arr.findIndex(s => s.id === selectedLead.status) > idx;
@@ -2403,6 +2877,14 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
                       );
                     })}
                   </div>
+                  {selectedLead.status === 'contract' && (
+                    <button
+                      onClick={() => { setConversionModal(selectedLead.id); setSelectedLead(null); setConversionForm({ zoneId: '', price: '99.00', frequency: 'monthly' }); }}
+                      className="mt-4 w-full bg-amber-porch text-white font-bold py-2 rounded-xl text-sm flex justify-center items-center gap-2 hover:brightness-110 transition-all shadow-sm"
+                    >
+                      <FileText className="w-4 h-4" /> Sign Contract
+                    </button>
+                  )}
                   {selectedLead.status === 'interested' && (
                     <button
                       onClick={() => { setScheduleModal(selectedLead); setSelectedLead(null); setScheduleForm({ start: '', end: '', techId: '', zoneId: '', price: '', frequency: 'bi-monthly' }); }}
@@ -2449,6 +2931,71 @@ export default function AdminApp({ session, profile }: { session: any, profile: 
           </div>
         </div>
       )}
+      {/* Conversion Modal */}
+      {conversionModal && (
+        <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-deep-forest/40 backdrop-blur-sm" onClick={() => setConversionModal(null)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="bg-pathway-green text-white p-5 flex items-center justify-between">
+              <div>
+                <h3 className="font-black text-lg">Convert to Customer</h3>
+                <p className="text-white/80 text-xs font-bold mt-1">Assign Territory to Route</p>
+              </div>
+              <button onClick={() => setConversionModal(null)} className="p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="text-[10px] font-black text-deep-forest/60 uppercase tracking-widest mb-1.5 block">Assign Territory Zone</label>
+                <select 
+                  className="w-full text-sm p-2.5 border border-deep-forest/20 rounded-xl bg-white focus:outline-none focus:border-pathway-green focus:ring-1 focus:ring-pathway-green transition-all"
+                  value={conversionForm.zoneId}
+                  onChange={e => setConversionForm(f => ({ ...f, zoneId: e.target.value }))}
+                >
+                  <option value="">Select a Territory...</option>
+                  {territoryZones.map(z => (
+                    <option key={z.id} value={z.id}>{z.name} (Days {z.service_block_start}-{z.service_block_end})</option>
+                  ))}
+                </select>
+              </div>
+              
+              <div className="flex gap-4 mt-4">
+                <div className="flex-1">
+                  <label className="text-[10px] font-black text-deep-forest/60 uppercase tracking-widest mb-1.5 block">Recurring Price ($)</label>
+                  <Input 
+                    type="number"
+                    value={conversionForm.price}
+                    onChange={e => setConversionForm(f => ({ ...f, price: e.target.value }))}
+                    className="bg-white border-deep-forest/10"
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="text-[10px] font-black text-deep-forest/60 uppercase tracking-widest mb-1.5 block">Frequency</label>
+                  <select 
+                    className="w-full text-sm p-2.5 border border-deep-forest/20 rounded-xl bg-white focus:outline-none focus:border-pathway-green"
+                    value={conversionForm.frequency}
+                    onChange={e => setConversionForm(f => ({ ...f, frequency: e.target.value }))}
+                  >
+                    <option value="monthly">Monthly (1-Year)</option>
+                    <option value="bi-monthly">Bi-Monthly (1-Year)</option>
+                    <option value="quarterly">Quarterly (1-Year)</option>
+                  </select>
+                </div>
+              </div>
+              
+              <button 
+                onClick={submitConversion}
+                disabled={!conversionForm.zoneId}
+                className="w-full bg-amber-porch hover:bg-amber-porch/90 text-white font-black py-3 rounded-xl transition-all disabled:opacity-50 mt-4 shadow-lg shadow-amber-porch/20"
+              >
+                Confirm & Send to Dispatch
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
